@@ -7,6 +7,8 @@
 
 schema_version = 2
 
+# version_requirement is the manifest constraint; resolved_version records the Cargo.lock baseline actually validated.
+
 [[dependency]]
 id = "rayon"
 kind = "runtime"
@@ -15,6 +17,7 @@ ownership = "external_mature"
 convergence_state = "retain_wrapper"
 package = "rayon"
 version_requirement = "1.12.0"
+resolved_version = "1.12.0"
 upstream_repo = "https://github.com/rayon-rs/rayon"
 wrapper_paths = ["crates/runtime-cpu-rayon/src/lib.rs"]
 contract = ["parallel iteration over independent WorkRange indices", "bounded local ThreadPool construction via ThreadPoolBuilder::num_threads", "nested Rayon detection via rayon::current_thread_index"]
@@ -30,6 +33,7 @@ ownership = "external_mature"
 convergence_state = "retain_wrapper"
 package = "wgpu"
 version_requirement = "30.0.1"
+resolved_version = "30.0.1"
 upstream_repo = "https://github.com/gfx-rs/wgpu"
 enabled_features = ["std", "dx12", "metal", "vulkan", "wgsl"]
 wrapper_paths = ["crates/runtime-gpu-wgpu/src/lib.rs"]
@@ -47,6 +51,7 @@ ownership = "external_support"
 convergence_state = "retain_wrapper"
 package = "bytemuck"
 version_requirement = "1.24.0"
+resolved_version = "1.25.2"
 upstream_repo = "https://github.com/Lokathor/bytemuck"
 wrapper_paths = ["crates/runtime-gpu-wgpu/src/lib.rs"]
 contract = ["cast f32 slices to byte slices for GPU buffer upload", "cast mapped readback bytes to f32 slices"]
@@ -62,6 +67,7 @@ ownership = "external_support"
 convergence_state = "review_host_executor"
 package = "pollster"
 version_requirement = "0.4.0"
+resolved_version = "0.4.0"
 upstream_repo = "https://github.com/zesterer/pollster"
 wrapper_paths = ["crates/runtime-gpu-wgpu/src/lib.rs"]
 contract = ["synchronously block on wgpu adapter request", "synchronously block on wgpu device request"]
@@ -77,6 +83,7 @@ ownership = "compatibility_pin"
 convergence_state = "remove_when_constraint_clears"
 package = "ordered-float"
 version_requirement = "=5.3.0"
+resolved_version = "5.3.0"
 upstream_repo = "crates.io:ordered-float"
 wrapper_paths = ["crates/runtime-gpu-wgpu/Cargo.toml", "Cargo.lock"]
 contract = ["constrain wgpu transitive resolution so the workspace remains compatible with Rust 1.87"]
