@@ -28,7 +28,7 @@ fn main(
 #[test]
 fn canonical_auto_cpu_uses_control_plane_without_overchunking() {
     let runtime = Runtime::new();
-    let task = TaskDefinition::new("canonical-auto-cpu");
+    let task = TaskDefinition::new("canonical-auto-cpu").with_cached_policy();
     let range = WorkRange::new(0, 65_536);
     let machine = MachineProfile::host_only();
 

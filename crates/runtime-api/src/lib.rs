@@ -47,6 +47,7 @@ pub enum ExecutionMode {
 pub struct TaskDefinition {
     pub id: &'static str,
     calibration: Option<CalibrationProfile>,
+    cached_policy: bool,
 }
 
 impl TaskDefinition {
@@ -54,6 +55,7 @@ impl TaskDefinition {
         Self {
             id,
             calibration: None,
+            cached_policy: false,
         }
     }
 
@@ -64,6 +66,18 @@ impl TaskDefinition {
 
     pub const fn calibration(&self) -> Option<CalibrationProfile> {
         self.calibration
+    }
+
+    /// Opt into the M11.5 cached-policy fast path for workloads whose task
+    /// identity and resource fingerprint are stable enough that repeated
+    /// arbitration would cost more than reusing the last route.
+    pub const fn with_cached_policy(mut self) -> Self {
+        self.cached_policy = true;
+        self
+    }
+
+    pub const fn cached_policy_enabled(&self) -> bool {
+        self.cached_policy
     }
 }
 
@@ -440,6 +454,20 @@ impl Runtime {
             telemetry,
             gpu_range_eligible: gpu_eligible,
         })
+    }
+
+    fn canonical_execution_plan(
+        &self,
+        task: &TaskDefinition,
+        work_items: usize,
+        capacity: BrokerCapacity,
+        request: BrokerRequest,
+    ) -> ExecutionPlan {
+        if task.cached_policy_enabled() {
+            self.cached_adaptive_execution_plan(task, work_items, capacity, request)
+        } else {
+            self.adaptive_execution_plan(task, work_items, capacity, request)
+        }
     }
 
     pub fn migration_plan(
@@ -869,8 +897,7 @@ impl Runtime {
                     self.cpu.effective_parallelism(self.config.execution_budget),
                     0,
                 );
-                let plan =
-                    self.cached_adaptive_execution_plan(task, range.len(), capacity, request);
+                let plan = self.canonical_execution_plan(task, range.len(), capacity, request);
 
                 match plan.primary_backend {
                     BackendKind::Serial => {
@@ -903,7 +930,7 @@ impl Runtime {
                 // the complete execution plan; M14 invalidates this cache when a
                 // material event requires replanning.
                 let mut plan =
-                    self.cached_adaptive_execution_plan(task, range.len(), base_capacity, request);
+                    self.canonical_execution_plan(task, range.len(), base_capacity, request);
 
                 if plan.primary_backend == BackendKind::Serial {
                     (BackendKind::Serial, None, None, execute_serial(range))
