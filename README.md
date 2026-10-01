@@ -126,48 +126,47 @@ problem from any single library or kernel.
 
 ## Architecture
 
+### System architecture
+
 ```mermaid
-flowchart TD
-    A["Application / Numerical Library"] --> B["AlpenCat API"]
-    B --> C["Execution Gate"]
+flowchart LR
+    A["Application / Numerical Library"] --> B["AlpenCat"]
 
-    C --> D["Machine Profile"]
-    C --> E["Runtime Telemetry"]
-    C --> F["Online Cost Model"]
-    C --> G["Execution Policy"]
+    B --> C["Serial CPU"]
+    B --> D["Parallel CPU"]
+    B --> E["GPU"]
 
-    D --> H["Adaptive Execution Planner"]
-    E --> H
-    F --> H
-    G --> H
-
-    H --> I["Resource Broker"]
-
-    I --> J["Serial Backend"]
-    I --> K["Parallel CPU Backend"]
-    I --> L["GPU Backend"]
-
-    K --> M["CPU Runtime Adapter"]
-    L --> N["GPU Runtime Adapter"]
-
-    M --> O["OS Scheduler / CPU"]
-    N --> P["GPU Runtime / Driver"]
-
-    I --> Q["Observed Execution Cost"]
-    Q --> E
-    Q --> F
+    D --> F["CPU Runtime / OS Scheduler"]
+    E --> G["GPU Runtime / Driver"]
 ```
 
-The layers are intentionally separate:
+AlpenCat sits above execution backends and below the application. It decides
+which admissible execution path to use, but it does not replace the operating
+system scheduler or GPU driver.
+
+### Adaptive control loop
+
+```mermaid
+flowchart LR
+    A["Observe"] --> B["Estimate"]
+    B --> C["Plan"]
+    C --> D["Choose"]
+    D --> E["Execute"]
+    E --> F["Measure"]
+    F --> A
+```
+
+Internally, the control plane combines machine capability, runtime telemetry,
+cost estimates, and policy constraints before selecting a backend. Execution
+results feed back into later decisions.
+
+The layers remain intentionally separate:
 
 - **Execution gate** — decides which backend is admissible and economically
   sensible.
 - **Planner / broker** — turns that decision into work units and budgets.
 - **Runtime adapters** — expose work to existing CPU/GPU runtime mechanisms.
 - **OS / driver** — performs actual hardware scheduling.
-
-AlpenCat does not attempt to manually place threads on CPU cores or replace a
-mature operating-system scheduler.
 
 ## Package structure
 
