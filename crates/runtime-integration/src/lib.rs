@@ -64,11 +64,7 @@ impl MigrationReadiness {
 pub struct IntegrationPolicy;
 
 impl IntegrationPolicy {
-    pub const fn decide(
-        self,
-        readiness: MigrationReadiness,
-        _plan: &ExecutionPlan,
-    ) -> MigrationDecision {
+    pub const fn decide_readiness(self, readiness: MigrationReadiness) -> MigrationDecision {
         if !readiness.supported {
             return MigrationDecision {
                 owner: ExecutionOwner::HostExisting,
@@ -87,6 +83,14 @@ impl IntegrationPolicy {
             owner: ExecutionOwner::Runtime,
             reason: MigrationReason::RuntimeValidated,
         }
+    }
+
+    pub const fn decide(
+        self,
+        readiness: MigrationReadiness,
+        _plan: &ExecutionPlan,
+    ) -> MigrationDecision {
+        self.decide_readiness(readiness)
     }
 }
 
@@ -185,6 +189,20 @@ mod tests {
         let decision = IntegrationPolicy.decide(MigrationReadiness::validated(), &plan(0));
         assert_eq!(decision.owner, ExecutionOwner::Runtime);
         assert_eq!(decision.reason, MigrationReason::RuntimeValidated);
+    }
+
+    #[test]
+    fn readiness_only_decision_matches_plan_aware_compatibility_api() {
+        for readiness in [
+            MigrationReadiness::validated(),
+            MigrationReadiness::supported_unvalidated(),
+            MigrationReadiness::unsupported(),
+        ] {
+            assert_eq!(
+                IntegrationPolicy.decide_readiness(readiness),
+                IntegrationPolicy.decide(readiness, &plan(0))
+            );
+        }
     }
 
     #[test]
