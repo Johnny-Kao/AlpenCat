@@ -24,7 +24,7 @@ fn unsupported_work_stays_on_host_existing() {
 fn execution_lease_blocks_post_commit_fallback() {
     let runtime = Runtime::new();
     let task = TaskDefinition::new("validated");
-    let mut migration = runtime.migration_plan(
+    let migration = runtime.migration_plan(
         &task,
         65_536,
         BrokerCapacity::new(4, 0),
@@ -34,9 +34,7 @@ fn execution_lease_blocks_post_commit_fallback() {
         MigrationReadiness::validated(),
     );
 
-    // Cold-start confidence may conservatively keep the host path. For the
-    // lease invariant itself, exercise an explicitly runtime-owned decision.
-    migration.decision.owner = ExecutionOwner::Runtime;
+    assert_eq!(migration.decision.owner, ExecutionOwner::Runtime);
     let mut lease = ExecutionLease::new(migration.decision);
     lease.commit_runtime().unwrap();
     assert_eq!(
