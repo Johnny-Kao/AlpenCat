@@ -105,6 +105,7 @@ implementation.
 
 ## Licensing
 
-A public OSS license has not yet been selected. External code contributions
-should not be accepted until the repository's license and contribution terms
-are finalized.
+AlpenCat is dual-licensed under `MIT OR Apache-2.0`.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in AlpenCat is provided under the same dual-license terms.

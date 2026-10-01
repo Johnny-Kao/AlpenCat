@@ -2,6 +2,11 @@
 
 **Adaptive Execution Runtime**
 
+[![Status: Experimental](https://img.shields.io/badge/status-experimental-orange)](#project-status-and-versioning)
+[![Version](https://img.shields.io/badge/version-v0.1.0-blue)](./CHANGELOG.md)
+[![Rust](https://img.shields.io/badge/Rust-1.87%2B-000000?logo=rust)](./Cargo.toml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](#license)
+
 > **Status: Experimental — v0.1.0**
 >
 > AlpenCat's first complete runtime architecture is implemented and under active
@@ -308,8 +313,7 @@ Known boundaries include:
   hardware vendors;
 - the Apple FIR validation is not a live Metal adapter integration;
 - production-critical stability guarantees have not been defined;
-- public package licensing and publication metadata must be finalized before a
-  public release.
+- package publication remains disabled while the public API is experimental.
 
 These are validation and productization boundaries, not reasons to reopen the
 completed v0.1 scheduler architecture.
@@ -331,7 +335,7 @@ completed v0.1 scheduler architecture.
 - validate more Intel, AMD, Apple Silicon, and GPU environments;
 - strengthen cold-start/generalization evidence;
 - reduce and clarify the public integration surface;
-- complete release packaging, examples, and licensing;
+- complete release packaging and examples;
 - keep architecture changes evidence-driven rather than milestone-driven.
 
 ### Long term
@@ -410,7 +414,10 @@ validation evidence; they are not the primary onboarding path.
 
 ## License
 
-A public OSS license has **not yet been selected**. This repository remains in
-pre-public-release validation. License selection is a release blocker and must
-be completed before accepting external code contributions under a public
-release.
+AlpenCat is dual-licensed under either of:
+
+- [MIT License](./LICENSE-MIT)
+- [Apache License 2.0](./LICENSE-APACHE)
+
+You may choose either license when using, modifying, or redistributing AlpenCat.
+The Cargo license expression is `MIT OR Apache-2.0`.

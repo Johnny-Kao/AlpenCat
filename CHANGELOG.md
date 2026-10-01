@@ -52,4 +52,4 @@ At runtime commit `eca250d2e9ab8d04e2483d4e9049a5d0f870953a`:
 - Apple FIR benchmark is not a live Metal Runtime-adapter integration
 - broad hardware portability evidence is still incomplete
 - external OpenMP/BLAS/Python pool coordination is not automatically controlled
-- public OSS license is not yet selected
+- package publication remains disabled while the public API is experimental
