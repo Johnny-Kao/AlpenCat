@@ -122,12 +122,14 @@ flowchart LR
     H --> I["AlpenCat"]
 ```
 
-AlpenCat is the abstraction that emerged from separating that execution-control
-problem from any single library or kernel.
+AlpenCat generalizes that execution-control problem into a reusable adaptive
+runtime for heterogeneous compute. It selects among serial CPU, parallel CPU,
+and GPU execution paths using machine capabilities, runtime telemetry, online
+cost modeling, and execution constraints.
 
-## Architecture
+## Runtime architecture
 
-### System architecture
+### Application-to-backend execution path
 
 ```mermaid
 flowchart LR
@@ -145,7 +147,7 @@ AlpenCat sits above execution backends and below the application. It decides
 which admissible execution path to use, but it does not replace the operating
 system scheduler or GPU driver.
 
-### Adaptive control loop
+### Adaptive execution control loop
 
 ```mermaid
 flowchart LR
