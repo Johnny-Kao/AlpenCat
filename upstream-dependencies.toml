@@ -23,9 +23,9 @@ introduced_at = "2026-10-01"
 last_validated_at = "2026-10-02"
 manifest_paths = ["crates/runtime-cpu-rayon/Cargo.toml", "crates/runtime-api/Cargo.toml"]
 wrapper_paths = ["crates/runtime-cpu-rayon/src/lib.rs"]
-usage_markers = ["ThreadPoolBuilder", "current_thread_index", "into_par_iter", "pool.install"]
-contract = ["parallel iteration over independent WorkRange indices", "bounded local ThreadPool construction via ThreadPoolBuilder::num_threads", "nested Rayon detection via rayon::current_thread_index"]
-upgrade_checks = ["cargo test --workspace", "oversubscription_runtime: non-nested CPU path remains bounded", "oversubscription_runtime: nested Rayon collapses to serial", "calibrate vector_scale before changing performance assumptions"]
+usage_markers = ["ThreadPoolBuilder", "current_thread_index", "into_par_iter", "pool.install", "CpuExecutionOptions"]
+contract = ["parallel iteration over independent WorkRange indices", "bounded local ThreadPool construction via ThreadPoolBuilder::num_threads", "nested Rayon detection via rayon::current_thread_index", "host-declared external parallelism collapses to serial inside the CPU wrapper"]
+upgrade_checks = ["cargo test --workspace", "oversubscription_runtime: non-nested CPU path remains bounded", "oversubscription_runtime: nested Rayon collapses to serial", "runtime-cpu-rayon: external parallelism uses serial wrapper path without pool creation", "calibrate vector_scale before changing performance assumptions"]
 removal_rule = "Retain this entry as removed/replaced; record replacement CPU runtime and preserve execution-budget/nested-parallelism semantics."
 notes = "Primary CPU execution wheel; all Rayon-specific behavior must stay behind runtime-cpu-rayon."
 

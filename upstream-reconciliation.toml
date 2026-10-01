@@ -39,10 +39,10 @@ notes = "Current prototype consumes Rayon as a dependency rather than vendoring 
   downstream_unit = "crates/runtime-cpu-rayon/src/lib.rs"
   action = "connector_wrapper"
   canonical_owner = "runtime-cpu-rayon"
-  semantic_contract = "bounded CPU execution; bounded Rayon pools are reused per CpuAdapter by max_parallelism; nested Rayon collapses to serial; public API exposes no Rayon types"
+  semantic_contract = "bounded CPU execution; bounded Rayon pools are reused per CpuAdapter by max_parallelism; nested Rayon and host-declared external parallelism collapse to serial inside the CPU wrapper; public API exposes no Rayon types"
   upstream_change_policy = "review_wrapper_contract"
   validation = ["cargo test --workspace", "oversubscription_runtime", "runtime-cpu-rayon pool reuse unit tests", "compare_pool_reuse benchmark"]
-  history = ["2026-10-01: replaced per-call ThreadPoolBuilder::build with per-CpuAdapter pool reuse keyed by max_parallelism after measuring ~18-22 us/call rebuild tax; full workspace tests PASS."]
+  history = ["2026-10-01: replaced per-call ThreadPoolBuilder::build with per-CpuAdapter pool reuse keyed by max_parallelism after measuring ~18-22 us/call rebuild tax; full workspace tests PASS.", "2026-10-02: moved host-declared external-parallelism fallback into CpuExecutionOptions/runtime-cpu-rayon so CPU execution constraints have one wrapper owner; AlpenCat Check + adaptive-control + FIR regression workflows PASS."]
 
 [[source]]
 id = "wgpu"
