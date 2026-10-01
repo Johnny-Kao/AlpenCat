@@ -11,6 +11,8 @@
 
 schema_version = 2
 
+# baseline_ref follows the Cargo.lock resolved baseline actually validated; manifest_requirement records looser direct constraints where relevant.
+
 [policy]
 update_model = "four_way_reconciliation"
 baseline_symbol = "U0"
@@ -80,7 +82,8 @@ notes = "Current prototype consumes wgpu as a dependency. Default feature surfac
 id = "bytemuck"
 upstream_repo = "https://github.com/Lokathor/bytemuck"
 import_mode = "external_dependency"
-baseline_ref = "crate:bytemuck@1.24.0"
+baseline_ref = "crate:bytemuck@1.25.2"
+manifest_requirement = "1.24.0"
 observed_upstream_ref = "UNSET"
 downstream_owner = "crates/runtime-gpu-wgpu"
 sync_state = "baseline_recorded"
