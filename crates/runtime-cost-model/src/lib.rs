@@ -306,8 +306,7 @@ impl LinearStats {
             return 0.0;
         }
 
-        let sample_confidence =
-            (self.success_samples as f64 / FULL_CONFIDENCE_SAMPLES).min(1.0);
+        let sample_confidence = (self.success_samples as f64 / FULL_CONFIDENCE_SAMPLES).min(1.0);
         let size_diversity = if self.fit().is_some() {
             1.0
         } else {

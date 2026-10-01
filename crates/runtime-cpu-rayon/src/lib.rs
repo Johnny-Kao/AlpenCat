@@ -220,15 +220,11 @@ mod tests {
         let adapter = CpuAdapter::default();
         let execution = adapter.map_with_options(
             WorkRange::new(0, 4096),
-            CpuExecutionOptions::new(ExecutionBudget::new(4))
-                .with_external_parallelism(true),
+            CpuExecutionOptions::new(ExecutionBudget::new(4)).with_external_parallelism(true),
             |index| index,
         );
 
-        assert_eq!(
-            execution.kind,
-            CpuExecutionKind::SerialExternalParallelism
-        );
+        assert_eq!(execution.kind, CpuExecutionKind::SerialExternalParallelism);
         assert_eq!(adapter.cached_pool_count(), 0);
     }
 }

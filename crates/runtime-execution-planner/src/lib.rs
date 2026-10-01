@@ -221,9 +221,7 @@ fn backend_mix(
     ];
 
     let measured = estimates.iter().flatten().count();
-    if measured < policy.min_cost_estimates_for_mix
-        || cost.confidence < policy.mix_min_confidence
-    {
+    if measured < policy.min_cost_estimates_for_mix || cost.confidence < policy.mix_min_confidence {
         return BackendMix::single(cost.backend);
     }
 
@@ -307,13 +305,9 @@ fn chunk_size(
     let mut chunk = work_items.div_ceil(target_chunks).max(1);
 
     if memory_pressure >= policy.high_memory_pressure {
-        chunk = chunk
-            .div_ceil(policy.high_pressure_divisor.max(1))
-            .max(1);
+        chunk = chunk.div_ceil(policy.high_pressure_divisor.max(1)).max(1);
     } else if memory_pressure >= policy.medium_memory_pressure {
-        chunk = chunk
-            .div_ceil(policy.medium_pressure_divisor.max(1))
-            .max(1);
+        chunk = chunk.div_ceil(policy.medium_pressure_divisor.max(1)).max(1);
     }
 
     chunk.min(work_items)
