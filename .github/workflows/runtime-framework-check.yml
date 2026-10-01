@@ -77,3 +77,5 @@ jobs:
           mkdir -p "$XDG_RUNTIME_DIR"
           cargo test -p runtime-api --test canonical_auto_runtime \
             canonical_auto_range_gpu_failure_replans_and_falls_back -- --nocapture
+          cargo test -p runtime-api --test canonical_auto_runtime \
+            canonical_auto_range_gpu_executes_chunked_registered_work -- --nocapture
