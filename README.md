@@ -185,7 +185,7 @@ Current workspace crates:
 | `runtime-machine` | machine/capability discovery |
 | `runtime-telemetry` | runtime observations |
 | `runtime-planner` | work-unit planning |
-| `runtime-broker` | dynamic resource brokerage |
+| `runtime-broker` | pending-work resource brokerage |
 | `runtime-cost-model` | learned execution-cost model |
 | `runtime-execution-planner` | adaptive execution-plan synthesis |
 | `runtime-policy-cache` | cached control-plane decisions |
@@ -195,6 +195,15 @@ Current workspace crates:
 
 The public abstraction is designed so backend-specific implementation types do
 not leak into callers.
+
+For the current synchronous v0.1 executor, some adaptive-plan fields are
+intentionally advisory rather than fully enforced execution guarantees:
+`backend_mix`, `max_in_flight`, `memory_budget_bytes`, and
+`residency_hint`. The canonical range executor enforces the primary backend
+and chunking decisions; the broker assigns pending work but is not yet a
+concurrent CPU/GPU load balancer. Integration/migration remains an adopter-side
+ownership boundary rather than an internal step performed merely because a
+task was submitted to the runtime.
 
 ## Dependency, wrapper, and update model
 
@@ -261,7 +270,7 @@ The v0.1 architecture includes:
 - machine and GPU capability discovery;
 - runtime telemetry;
 - work-unit planning;
-- dynamic resource brokerage;
+- pending-work resource brokerage;
 - cached execution policies for ultra-hot/tiny operations;
 - online machine-aware cost estimation;
 - setup / per-item / transfer cost separation;
