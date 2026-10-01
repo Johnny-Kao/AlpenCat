@@ -67,3 +67,13 @@ jobs:
           mkdir -p "$XDG_RUNTIME_DIR"
           cargo test -p runtime-api --test gpu_runtime \
             forced_gpu_registered_vector_scale_matches_serial_when_gpu_is_available -- --nocapture
+
+      - name: Validate canonical Auto GPU failure replan on software Vulkan
+        env:
+          WGPU_BACKEND: vulkan
+          RUNTIME_REQUIRE_GPU: "1"
+          XDG_RUNTIME_DIR: /tmp/alpencat-xdg
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR"
+          cargo test -p runtime-api --test canonical_auto_runtime \
+            canonical_auto_range_gpu_failure_replans_and_falls_back -- --nocapture

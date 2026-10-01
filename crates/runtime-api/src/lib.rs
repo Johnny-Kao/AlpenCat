@@ -667,33 +667,33 @@ impl Runtime {
         };
         let machine_fingerprint = MachineFingerprint::from_machine(&observed_machine);
 
-        let execute_serial = || {
+        let execute_serial = |work: WorkRange| {
             let started = std::time::Instant::now();
-            let values = self.execute_serial_map(range, element);
+            let values = self.execute_serial_map(work, element);
             self.cost_model.observe_detailed(
                 task.id,
                 BackendKind::Serial,
                 machine_fingerprint,
-                CostObservation::execution(range.len(), started.elapsed(), true),
+                CostObservation::execution(work.len(), started.elapsed(), true),
             );
             values
         };
 
-        let execute_cpu = || {
+        let execute_cpu = |work: WorkRange| {
             let started = std::time::Instant::now();
-            let (backend, constraint, values) = self.execute_cpu(range, element);
+            let (backend, constraint, values) = self.execute_cpu(work, element);
             self.cost_model.observe_detailed(
                 task.id,
                 backend,
                 machine_fingerprint,
-                CostObservation::execution(range.len(), started.elapsed(), true),
+                CostObservation::execution(work.len(), started.elapsed(), true),
             );
             (backend, constraint, values)
         };
 
-        let execute_gpu = || -> Result<Vec<T>, RuntimeError> {
+        let execute_gpu = |work: WorkRange| -> Result<Vec<T>, RuntimeError> {
             let started = std::time::Instant::now();
-            let observation = self.telemetry.begin(BackendKind::Gpu, range.len());
+            let observation = self.telemetry.begin(BackendKind::Gpu, work.len());
             let result = (|| {
                 let gpu_impl = implementations
                     .gpu
@@ -701,7 +701,7 @@ impl Runtime {
                     .ok_or(RuntimeError::BackendUnavailable(BackendKind::Gpu))?;
                 let adapter = self.gpu_adapter()?;
                 let context = GpuExecutionContext::new(adapter);
-                gpu_impl(&context, range)
+                gpu_impl(&context, work)
             })();
 
             let success = result.is_ok();
@@ -714,37 +714,168 @@ impl Runtime {
                 task.id,
                 BackendKind::Gpu,
                 machine_fingerprint,
-                CostObservation::execution(range.len(), started.elapsed(), success),
+                CostObservation::execution(work.len(), started.elapsed(), success),
             );
             result
         };
 
         let (backend, fallback_from, constraint, result) = match mode {
-            ExecutionMode::Auto => match self.automatic_backend_with_machine(
-                task,
-                range.len(),
-                gpu_eligible,
-                &observed_machine,
-            ) {
-                BackendKind::Serial => (BackendKind::Serial, None, None, execute_serial()),
-                BackendKind::Cpu => {
-                    let (backend, constraint, values) = execute_cpu();
-                    (backend, None, constraint, values)
-                }
-                BackendKind::Gpu => match execute_gpu() {
-                    Ok(values) => (BackendKind::Gpu, None, None, values),
-                    Err(_) => {
-                        let (backend, constraint, values) = execute_cpu();
-                        (backend, Some(BackendKind::Gpu), constraint, values)
+            ExecutionMode::Auto if implementations.gpu_eligible()
+                && !implementations.gpu_range_eligible() =>
+            {
+                // Whole-task-only GPU registrations cannot participate in M10/M11
+                // chunk reassignment. Preserve the pre-integration Auto path.
+                match self.automatic_backend_with_machine(
+                    task,
+                    range.len(),
+                    gpu_eligible,
+                    &observed_machine,
+                ) {
+                    BackendKind::Serial => {
+                        (BackendKind::Serial, None, None, execute_serial(range))
                     }
-                },
-            },
-            ExecutionMode::Serial => (BackendKind::Serial, None, None, execute_serial()),
+                    BackendKind::Cpu => {
+                        let (backend, constraint, values) = execute_cpu(range);
+                        (backend, None, constraint, values)
+                    }
+                    BackendKind::Gpu => match execute_gpu(range) {
+                        Ok(values) => (BackendKind::Gpu, None, None, values),
+                        Err(_) => {
+                            let (backend, constraint, values) = execute_cpu(range);
+                            (backend, Some(BackendKind::Gpu), constraint, values)
+                        }
+                    },
+                }
+            }
+            ExecutionMode::Auto => {
+                let request = BrokerRequest {
+                    gpu_range_eligible: implementations.gpu_range_eligible(),
+                };
+                let base_capacity = BrokerCapacity::new(
+                    self.cpu.effective_parallelism(self.config.execution_budget),
+                    usize::from(request.gpu_range_eligible && !observed_machine.gpus.is_empty()),
+                );
+
+                // M11.5 supplies a stable preferred route. M12/M13 still produce
+                // the complete execution plan; M14 invalidates this cache when a
+                // material event requires replanning.
+                let preferred_backend = self
+                    .cached_execution_policy(task, range.len(), base_capacity, request)
+                    .map(|policy| policy.backend);
+                let mut plan = self.adaptive_execution_plan_with_preference(
+                    task,
+                    range.len(),
+                    base_capacity,
+                    request,
+                    preferred_backend,
+                );
+
+                // A direct Runtime submission has already crossed the adopter
+                // boundary. Commit M15 ownership before any work executes.
+                let migration = IntegrationPolicy.decide(MigrationReadiness::validated(), &plan);
+                let mut lease = ExecutionLease::new(migration);
+                lease
+                    .commit_runtime()
+                    .expect("validated direct Runtime submission must be runtime-owned");
+
+                if plan.primary_backend == BackendKind::Serial {
+                    (BackendKind::Serial, None, None, execute_serial(range))
+                } else {
+                    let work_plan =
+                        self.plan_work(range, ChunkPolicy::fixed(plan.chunk_size.max(1)));
+                    let mut queue = WorkQueue::from_plan(&work_plan);
+                    let mut rebalance = self.begin_rebalancing(plan.clone());
+                    let mut values = Vec::with_capacity(range.len());
+                    let mut completed_items = 0usize;
+                    let mut last_backend = plan.primary_backend;
+                    let mut fallback_from = None;
+                    let mut constraint = None;
+
+                    while !queue.is_empty() {
+                        // M13 owns the chosen route and M11 owns pending-work
+                        // claiming. Until execution becomes asynchronous, expose
+                        // only the current primary backend to the broker.
+                        let broker_capacity = match plan.primary_backend {
+                            BackendKind::Serial => BrokerCapacity::new(0, 0),
+                            BackendKind::Cpu => BrokerCapacity::new(
+                                plan.cpu_parallelism.min(base_capacity.cpu_slots).max(1),
+                                0,
+                            ),
+                            BackendKind::Gpu => BrokerCapacity::new(0, base_capacity.gpu_slots),
+                        };
+
+                        let assignment =
+                            self.claim_next_work(&mut queue, broker_capacity, request);
+
+                        let unit = if let Some(assignment) = assignment {
+                            let unit = assignment.unit;
+                            match assignment.backend {
+                                BackendKind::Cpu => {
+                                    let (actual_backend, current_constraint, chunk) =
+                                        execute_cpu(unit.range);
+                                    last_backend = actual_backend;
+                                    if constraint.is_none() {
+                                        constraint = current_constraint;
+                                    }
+                                    values.extend(chunk);
+                                }
+                                BackendKind::Gpu => match execute_gpu(unit.range) {
+                                    Ok(chunk) => {
+                                        last_backend = BackendKind::Gpu;
+                                        values.extend(chunk);
+                                    }
+                                    Err(_) => {
+                                        fallback_from = Some(BackendKind::Gpu);
+                                        let (actual_backend, current_constraint, chunk) =
+                                            execute_cpu(unit.range);
+                                        last_backend = actual_backend;
+                                        if constraint.is_none() {
+                                            constraint = current_constraint;
+                                        }
+                                        values.extend(chunk);
+                                    }
+                                },
+                                BackendKind::Serial => unreachable!(
+                                    "M11 broker only assigns CPU/GPU work in the adaptive path"
+                                ),
+                            }
+                            unit
+                        } else {
+                            // No currently admissible broker capacity: preserve
+                            // correctness with the serial runtime-owned fallback.
+                            let unit = queue
+                                .claim_next()
+                                .expect("non-empty adaptive queue must yield a WorkUnit");
+                            values.extend(execute_serial(unit.range));
+                            last_backend = BackendKind::Serial;
+                            if constraint.is_none() {
+                                constraint = Some(ExecutionConstraint::ResourceLimited);
+                            }
+                            unit
+                        };
+
+                        completed_items = completed_items.saturating_add(unit.len());
+                        let remaining = range.len().saturating_sub(completed_items);
+                        if let Some(update) = self.rebalance_if_needed(
+                            &mut rebalance,
+                            task,
+                            remaining,
+                            base_capacity,
+                            request,
+                        ) {
+                            plan = update.plan;
+                        }
+                    }
+
+                    (last_backend, fallback_from, constraint, values)
+                }
+            }
+            ExecutionMode::Serial => (BackendKind::Serial, None, None, execute_serial(range)),
             ExecutionMode::Cpu => {
-                let (backend, constraint, values) = execute_cpu();
+                let (backend, constraint, values) = execute_cpu(range);
                 (backend, None, constraint, values)
             }
-            ExecutionMode::Gpu => (BackendKind::Gpu, None, None, execute_gpu()?),
+            ExecutionMode::Gpu => (BackendKind::Gpu, None, None, execute_gpu(range)?),
         };
 
         Ok(TaskHandle {
