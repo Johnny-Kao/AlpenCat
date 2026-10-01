@@ -8,7 +8,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.87%2B-000000?logo=rust)](./Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](#license)
 
-> **Status: Experimental — v0.1.0**
+> **Status: Experimental — v0.1 development**
 >
 > AlpenCat's first complete runtime architecture is implemented and under active
 > validation. APIs, configuration surfaces, backend behavior, and performance
