@@ -720,8 +720,8 @@ impl Runtime {
         };
 
         let (backend, fallback_from, constraint, result) = match mode {
-            ExecutionMode::Auto if implementations.gpu_eligible()
-                && !implementations.gpu_range_eligible() =>
+            ExecutionMode::Auto
+                if implementations.gpu_eligible() && !implementations.gpu_range_eligible() =>
             {
                 // Whole-task-only GPU registrations cannot participate in M10/M11
                 // chunk reassignment. Preserve the pre-integration Auto path.
@@ -731,9 +731,7 @@ impl Runtime {
                     gpu_eligible,
                     &observed_machine,
                 ) {
-                    BackendKind::Serial => {
-                        (BackendKind::Serial, None, None, execute_serial(range))
-                    }
+                    BackendKind::Serial => (BackendKind::Serial, None, None, execute_serial(range)),
                     BackendKind::Cpu => {
                         let (backend, constraint, values) = execute_cpu(range);
                         (backend, None, constraint, values)
@@ -804,8 +802,7 @@ impl Runtime {
                             BackendKind::Gpu => BrokerCapacity::new(0, base_capacity.gpu_slots),
                         };
 
-                        let assignment =
-                            self.claim_next_work(&mut queue, broker_capacity, request);
+                        let assignment = self.claim_next_work(&mut queue, broker_capacity, request);
 
                         let unit = if let Some(assignment) = assignment {
                             let unit = assignment.unit;
