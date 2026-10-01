@@ -1,0 +1,69 @@
+name: AlpenCat Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: alpencat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-correctness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87 toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+      - name: Build documentation
+        run: cargo doc --workspace --no-deps
+
+      - name: Validate upstream reconciliation ledger
+        run: python3 tools/validate_reconciliation.py
+
+      - name: Validate dependency convergence
+        run: python3 tools/validate_dependency_convergence.py
+
+      - name: Install software Vulkan runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers libvulkan1
+
+      - name: Validate Vulkan capability discovery
+        env:
+          WGPU_BACKEND: vulkan
+          RUNTIME_REQUIRE_GPU: "1"
+          XDG_RUNTIME_DIR: /tmp/alpencat-xdg
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR"
+          cargo test -p runtime-api --test machine_profile_runtime \
+            explicit_machine_profile_probe_preserves_host_profile -- --nocapture
+
+      - name: Validate registered GPU execution on software Vulkan
+        env:
+          WGPU_BACKEND: vulkan
+          RUNTIME_REQUIRE_GPU: "1"
+          XDG_RUNTIME_DIR: /tmp/alpencat-xdg
+        run: |
+          mkdir -p "$XDG_RUNTIME_DIR"
+          cargo test -p runtime-api --test gpu_runtime \
+            forced_gpu_registered_vector_scale_matches_serial_when_gpu_is_available -- --nocapture

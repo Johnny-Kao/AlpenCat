@@ -1,0 +1,15 @@
+[package]
+name = "runtime-integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+runtime-execution-planner = { path = "../runtime-execution-planner" }
+
+[dev-dependencies]
+runtime-core = { path = "../runtime-core" }
+
+[lib]
+path = "src/lib.rs"

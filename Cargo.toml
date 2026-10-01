@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/runtime-api",
+    "crates/runtime-core",
+    "crates/runtime-selector",
+    "crates/runtime-cpu-rayon",
+    "crates/runtime-gpu-wgpu",
+    "crates/runtime-integration",
+    "crates/runtime-machine",
+    "crates/runtime-telemetry",
+    "crates/runtime-planner",
+    "crates/runtime-broker",
+    "crates/runtime-cost-model",
+    "crates/runtime-execution-planner",
+    "crates/runtime-policy-cache",
+    "crates/runtime-rebalancer",
+    "crates/runtime-cffi-bridge",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+publish = false

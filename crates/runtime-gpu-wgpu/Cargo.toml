@@ -1,0 +1,18 @@
+[package]
+name = "runtime-gpu-wgpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck = "1.24.0"
+# MSRV guard for wgpu 30.0.1 on Rust 1.87; remove when the transitive
+# resolver no longer selects an ordered-float release requiring newer Rust.
+ordered-float = "=5.3.0"
+pollster = "0.4.0"
+runtime-core = { path = "../runtime-core" }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "dx12", "metal", "vulkan", "wgsl"] }
+
+[lib]
+path = "src/lib.rs"

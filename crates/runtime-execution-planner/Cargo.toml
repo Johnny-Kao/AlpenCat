@@ -1,0 +1,15 @@
+[package]
+name = "runtime-execution-planner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+runtime-core = { path = "../runtime-core" }
+runtime-cost-model = { path = "../runtime-cost-model" }
+runtime-machine = { path = "../runtime-machine" }
+runtime-telemetry = { path = "../runtime-telemetry" }
+
+[lib]
+path = "src/lib.rs"

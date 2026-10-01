@@ -1,0 +1,56 @@
+name: AlpenCat Adaptive Control Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "benchmarks/adaptive-control/**"
+      - "crates/runtime-cost-model/**"
+      - "crates/runtime-execution-planner/**"
+      - "crates/runtime-rebalancer/**"
+      - ".github/workflows/runtime-adaptive-benchmark.yml"
+
+concurrency:
+  group: alpencat-adaptive-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adaptive-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Run adaptive control benchmark
+        working-directory: benchmarks/adaptive-control
+        run: |
+          set -o pipefail
+          cargo run --release | tee adaptive-control.txt
+
+      - name: Record runner metadata
+        run: |
+          {
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${RUNNER_OS}"
+            uname -a
+            lscpu
+            free -h
+          } > benchmarks/adaptive-control/runner-metadata.txt
+
+      - name: Upload benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: adaptive-control-${{ github.run_id }}
+          path: |
+            benchmarks/adaptive-control/adaptive-control.txt
+            benchmarks/adaptive-control/runner-metadata.txt
+          retention-days: 30
