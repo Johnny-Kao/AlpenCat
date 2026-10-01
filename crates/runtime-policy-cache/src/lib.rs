@@ -65,23 +65,15 @@ fn pressure_band(in_flight: usize, slots: usize) -> u8 {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct PolicyKey {
     task_id: String,
-    work_class: u8,
+    work_items: usize,
 }
 
 impl PolicyKey {
     fn new(task_id: &str, work_items: usize) -> Self {
         Self {
             task_id: task_id.to_owned(),
-            work_class: work_class(work_items),
+            work_items,
         }
-    }
-}
-
-fn work_class(work_items: usize) -> u8 {
-    if work_items == 0 {
-        0
-    } else {
-        (usize::BITS - work_items.leading_zeros()) as u8
     }
 }
 
@@ -295,6 +287,31 @@ mod tests {
     }
 
     #[test]
+    fn adjacent_work_sizes_do_not_share_a_cached_route() {
+        let cache = ExecutionPolicyCache::new(8);
+        let cap = BrokerCapacity::new(4, 0);
+        let request = BrokerRequest {
+            gpu_range_eligible: false,
+        };
+
+        let first = cache
+            .resolve_with("x", 8, telemetry(0, 0, 0), cap, request, || {
+                Some(BackendKind::Serial)
+            })
+            .unwrap();
+        let second = cache
+            .resolve_with("x", 9, telemetry(0, 0, 0), cap, request, || {
+                Some(BackendKind::Cpu)
+            })
+            .unwrap();
+
+        assert_eq!(first.status, PolicyCacheStatus::Planned);
+        assert_eq!(second.status, PolicyCacheStatus::Planned);
+        assert_eq!(first.backend, BackendKind::Serial);
+        assert_eq!(second.backend, BackendKind::Cpu);
+    }
+
+    #[test]
     fn material_pressure_change_replans() {
         let cache = ExecutionPolicyCache::new(8);
         let cap = BrokerCapacity::new(4, 1);
@@ -336,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn task_invalidation_removes_all_work_classes() {
+    fn task_invalidation_removes_all_work_sizes() {
         let cache = ExecutionPolicyCache::new(8);
         let cap = BrokerCapacity::new(4, 1);
         let _ = cache.resolve("x", 10, telemetry(0, 0, 0), cap, request());
