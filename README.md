@@ -1,6 +1,7 @@
-# AlpenCat
-
-**Adaptive Execution Runtime**
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/Johnny-Kao/AlpenCat/main/branding/alpencat-logo.jpg" width="700" alt="AlpenCat — Adaptive Execution Runtime">
+</h1>
+<br>
 
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange)](#project-status-and-versioning)
 [![Version](https://img.shields.io/badge/version-v0.1.0-blue)](./CHANGELOG.md)
