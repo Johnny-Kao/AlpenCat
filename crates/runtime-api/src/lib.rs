@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 
 use runtime_broker::ResourceBroker;
 use runtime_cost_model::OnlineCostModel;
-use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
+use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind, CpuExecutionOptions};
 use runtime_execution_planner::AdaptiveExecutionPlanner;
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_integration::IntegrationPolicy;
@@ -699,15 +699,8 @@ impl Runtime {
         T: Send,
         F: Fn(usize) -> T + Sync + Send,
     {
-        if self.config.external_parallelism.active {
-            return (
-                BackendKind::Serial,
-                Some(ExecutionConstraint::ExternalParallelism),
-                self.execute_serial_map(range, operation),
-            );
-        }
-
-        let expected_backend = if self.cpu.effective_parallelism(budget) <= 1
+        let expected_backend = if self.config.external_parallelism.active
+            || self.cpu.effective_parallelism(budget) <= 1
             || self.cpu.in_rayon_parallel_context()
         {
             BackendKind::Serial
@@ -715,7 +708,12 @@ impl Runtime {
             BackendKind::Cpu
         };
         let observation = self.telemetry.begin(expected_backend, range.len());
-        let execution = self.cpu.map(range, budget, operation);
+        let execution = self.cpu.map_with_options(
+            range,
+            CpuExecutionOptions::new(budget)
+                .with_external_parallelism(self.config.external_parallelism.active),
+            operation,
+        );
         observation.success();
 
         match execution.kind {
@@ -733,6 +731,11 @@ impl Runtime {
             CpuExecutionKind::SerialNested => (
                 BackendKind::Serial,
                 Some(ExecutionConstraint::NestedParallelism),
+                execution.values,
+            ),
+            CpuExecutionKind::SerialExternalParallelism => (
+                BackendKind::Serial,
+                Some(ExecutionConstraint::ExternalParallelism),
                 execution.values,
             ),
             CpuExecutionKind::SerialResourceLimited => (

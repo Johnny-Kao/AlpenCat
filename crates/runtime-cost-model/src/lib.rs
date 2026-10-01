@@ -20,6 +20,16 @@ use runtime_telemetry::{BackendTelemetrySnapshot, RuntimeTelemetrySnapshot};
 
 const LOCAL_BUCKETS: usize = usize::BITS as usize;
 const UNCERTAINTY_MARGIN: f64 = 0.10;
+const WARMUP_SAMPLES: u64 = 4;
+const WARMUP_ALPHA: f64 = 0.5;
+const STEADY_ALPHA: f64 = 0.2;
+const LOCAL_BLEND_FULL_SAMPLES: f64 = 4.0;
+const LOCAL_BLEND_MAX: f64 = 0.75;
+const MIN_LINEAR_FIT_SAMPLES: u64 = 4;
+const FULL_CONFIDENCE_SAMPLES: f64 = 8.0;
+const NO_FIT_SIZE_DIVERSITY_CONFIDENCE: f64 = 0.6;
+const FAILURE_RATE_PENALTY: f64 = 4.0;
+const DEFAULT_MODEL_ENTRIES: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CostEstimateSource {
@@ -137,7 +147,11 @@ struct LocalBucket {
 impl LocalBucket {
     fn observe(&mut self, work: f64, compute_nanos: f64) {
         self.samples = self.samples.saturating_add(1);
-        let alpha = if self.samples <= 4 { 0.5 } else { 0.2 };
+        let alpha = if self.samples <= WARMUP_SAMPLES {
+            WARMUP_ALPHA
+        } else {
+            STEADY_ALPHA
+        };
         if self.samples == 1 {
             self.ema_work = work;
             self.ema_compute_nanos = compute_nanos;
@@ -148,7 +162,7 @@ impl LocalBucket {
     }
 
     fn blend_weight(self) -> f64 {
-        (self.samples as f64 / 4.0).min(0.75)
+        (self.samples as f64 / LOCAL_BLEND_FULL_SAMPLES).min(LOCAL_BLEND_MAX)
     }
 }
 
@@ -225,7 +239,11 @@ impl LinearStats {
         } else {
             self.min_x = self.min_x.min(x);
             self.max_x = self.max_x.max(x);
-            let alpha = if self.success_samples <= 4 { 0.5 } else { 0.2 };
+            let alpha = if self.success_samples <= WARMUP_SAMPLES {
+                WARMUP_ALPHA
+            } else {
+                STEADY_ALPHA
+            };
             let per_item = compute_nanos / x;
             self.ema_nanos_per_item = alpha * per_item + (1.0 - alpha) * self.ema_nanos_per_item;
         }
@@ -239,7 +257,7 @@ impl LinearStats {
     }
 
     fn fit(self) -> Option<(f64, f64)> {
-        if self.success_samples < 4 || self.max_x <= self.min_x {
+        if self.success_samples < MIN_LINEAR_FIT_SAMPLES || self.max_x <= self.min_x {
             return None;
         }
 
@@ -280,7 +298,7 @@ impl LinearStats {
         };
         let corrected = (compute + residual).max(0.0) + transfer;
         let failure_rate = self.failure_samples as f64 / self.samples.max(1) as f64;
-        Some(corrected * (1.0 + failure_rate * 4.0))
+        Some(corrected * (1.0 + failure_rate * FAILURE_RATE_PENALTY))
     }
 
     fn confidence(self) -> f64 {
@@ -288,8 +306,13 @@ impl LinearStats {
             return 0.0;
         }
 
-        let sample_confidence = (self.success_samples as f64 / 8.0).min(1.0);
-        let size_diversity = if self.fit().is_some() { 1.0 } else { 0.6 };
+        let sample_confidence =
+            (self.success_samples as f64 / FULL_CONFIDENCE_SAMPLES).min(1.0);
+        let size_diversity = if self.fit().is_some() {
+            1.0
+        } else {
+            NO_FIT_SIZE_DIVERSITY_CONFIDENCE
+        };
         let reliability = 1.0 - self.failure_samples as f64 / self.samples.max(1) as f64;
         (sample_confidence * size_diversity * reliability).clamp(0.0, 1.0)
     }
@@ -326,7 +349,7 @@ pub struct OnlineCostModel {
 
 impl Default for OnlineCostModel {
     fn default() -> Self {
-        Self::new(4096)
+        Self::new(DEFAULT_MODEL_ENTRIES)
     }
 }
 
@@ -628,7 +651,7 @@ fn telemetry_confidence(snapshot: BackendTelemetrySnapshot) -> f64 {
     if total == 0.0 {
         return 0.0;
     }
-    ((successes / 8.0).min(1.0) * (successes / total)).clamp(0.0, 1.0)
+    ((successes / FULL_CONFIDENCE_SAMPLES).min(1.0) * (successes / total)).clamp(0.0, 1.0)
 }
 
 fn apply_pressure(
@@ -645,7 +668,7 @@ fn apply_pressure(
     let pressure = telemetry.in_flight as f64 / slots as f64;
     let failure_rate = telemetry.failed as f64
         / telemetry.completed.saturating_add(telemetry.failed).max(1) as f64;
-    base_nanos * (1.0 + pressure + failure_rate * 4.0)
+    base_nanos * (1.0 + pressure + failure_rate * FAILURE_RATE_PENALTY)
 }
 
 #[cfg(test)]

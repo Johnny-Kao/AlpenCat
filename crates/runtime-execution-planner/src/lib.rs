@@ -84,23 +84,68 @@ pub struct PlannerContext<'a> {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AdaptiveExecutionPlanner;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannerPolicy {
+    pub min_cost_estimates_for_mix: usize,
+    pub mix_min_confidence: f64,
+    pub backend_prune_ratio: f64,
+    pub target_chunks_per_lane: usize,
+    pub memory_available_divisor: u64,
+    pub memory_total_divisor: u64,
+    pub medium_memory_pressure: f64,
+    pub high_memory_pressure: f64,
+    pub medium_pressure_divisor: usize,
+    pub high_pressure_divisor: usize,
+    pub residency_min_confidence: f64,
+    pub keep_resident_min_items: usize,
+}
+
+impl Default for PlannerPolicy {
+    fn default() -> Self {
+        Self {
+            min_cost_estimates_for_mix: 2,
+            mix_min_confidence: 0.25,
+            backend_prune_ratio: 2.0,
+            target_chunks_per_lane: 4,
+            memory_available_divisor: 4,
+            memory_total_divisor: 8,
+            medium_memory_pressure: 0.70,
+            high_memory_pressure: 0.85,
+            medium_pressure_divisor: 2,
+            high_pressure_divisor: 4,
+            residency_min_confidence: 0.75,
+            keep_resident_min_items: 1_000_000,
+        }
+    }
+}
+
 impl AdaptiveExecutionPlanner {
     pub fn plan(self, context: PlannerContext<'_>) -> ExecutionPlan {
+        self.plan_with_policy(context, PlannerPolicy::default())
+    }
+
+    pub fn plan_with_policy(
+        self,
+        context: PlannerContext<'_>,
+        policy: PlannerPolicy,
+    ) -> ExecutionPlan {
         let work_items = context.work_items.max(1);
         let cpu_parallelism = cpu_parallelism(context.machine, context.telemetry);
-        let memory_budget_bytes = memory_budget(context.machine);
-        let backend_mix = backend_mix(context.cost, context.gpu_range_eligible);
+        let memory_budget_bytes = memory_budget(context.machine, policy);
+        let backend_mix = backend_mix(context.cost, context.gpu_range_eligible, policy);
         let chunk_size = chunk_size(
             work_items,
             cpu_parallelism,
             backend_mix,
             memory_pressure(context.machine),
+            policy,
         );
         let max_in_flight = max_in_flight(
             cpu_parallelism,
             backend_mix,
             context.telemetry,
             memory_pressure(context.machine),
+            policy,
         );
         let gpu_device = if backend_mix.gpu_weight > 0 {
             context.machine.gpus.first().map(|gpu| gpu.name.clone())
@@ -113,6 +158,7 @@ impl AdaptiveExecutionPlanner {
             backend_mix,
             context.machine,
             memory_pressure(context.machine),
+            policy,
         );
 
         ExecutionPlan {
@@ -135,14 +181,14 @@ fn cpu_parallelism(machine: &MachineProfile, telemetry: RuntimeTelemetrySnapshot
     free.min(logical)
 }
 
-fn memory_budget(machine: &MachineProfile) -> Option<u64> {
+fn memory_budget(machine: &MachineProfile, policy: PlannerPolicy) -> Option<u64> {
     let total = machine.host.memory_total_bytes?;
     let available = machine.host.memory_available_bytes.unwrap_or(total);
 
     // Keep a conservative automatic working budget. The planner is not the
     // only process on the machine and must leave headroom for the host.
-    let by_available = available / 4;
-    let by_total = total / 8;
+    let by_available = available / policy.memory_available_divisor.max(1);
+    let by_total = total / policy.memory_total_divisor.max(1);
     Some(by_available.min(by_total).max(1))
 }
 
@@ -159,7 +205,11 @@ fn memory_pressure(machine: &MachineProfile) -> f64 {
     (1.0 - available as f64 / total as f64).clamp(0.0, 1.0)
 }
 
-fn backend_mix(cost: CostModelDecision, gpu_range_eligible: bool) -> BackendMix {
+fn backend_mix(
+    cost: CostModelDecision,
+    gpu_range_eligible: bool,
+    policy: PlannerPolicy,
+) -> BackendMix {
     let mut estimates = [
         weighted_estimate(cost.serial),
         weighted_estimate(cost.cpu),
@@ -171,7 +221,9 @@ fn backend_mix(cost: CostModelDecision, gpu_range_eligible: bool) -> BackendMix 
     ];
 
     let measured = estimates.iter().flatten().count();
-    if measured < 2 || cost.confidence < 0.25 {
+    if measured < policy.min_cost_estimates_for_mix
+        || cost.confidence < policy.mix_min_confidence
+    {
         return BackendMix::single(cost.backend);
     }
 
@@ -184,7 +236,7 @@ fn backend_mix(cost: CostModelDecision, gpu_range_eligible: bool) -> BackendMix 
     // Backends predicted at more than 2x the best cost are not fed work.
     for estimate in &mut estimates {
         if let Some((_, nanos)) = estimate {
-            if *nanos > best * 2.0 {
+            if *nanos > best * policy.backend_prune_ratio.max(1.0) {
                 *estimate = None;
             }
         }
@@ -239,6 +291,7 @@ fn chunk_size(
     cpu_parallelism: usize,
     mix: BackendMix,
     memory_pressure: f64,
+    policy: PlannerPolicy,
 ) -> usize {
     let active_lanes = cpu_parallelism
         .saturating_mul(usize::from(mix.cpu_weight > 0))
@@ -248,13 +301,19 @@ fn chunk_size(
 
     // Target several chunks per active lane so M14 can later rebalance without
     // creating tiny scheduler-dominated units.
-    let target_chunks = active_lanes.saturating_mul(4).max(1);
+    let target_chunks = active_lanes
+        .saturating_mul(policy.target_chunks_per_lane.max(1))
+        .max(1);
     let mut chunk = work_items.div_ceil(target_chunks).max(1);
 
-    if memory_pressure >= 0.85 {
-        chunk = chunk.div_ceil(4).max(1);
-    } else if memory_pressure >= 0.70 {
-        chunk = chunk.div_ceil(2).max(1);
+    if memory_pressure >= policy.high_memory_pressure {
+        chunk = chunk
+            .div_ceil(policy.high_pressure_divisor.max(1))
+            .max(1);
+    } else if memory_pressure >= policy.medium_memory_pressure {
+        chunk = chunk
+            .div_ceil(policy.medium_pressure_divisor.max(1))
+            .max(1);
     }
 
     chunk.min(work_items)
@@ -265,6 +324,7 @@ fn max_in_flight(
     mix: BackendMix,
     telemetry: RuntimeTelemetrySnapshot,
     memory_pressure: f64,
+    policy: PlannerPolicy,
 ) -> usize {
     let mut capacity = if mix.cpu_weight > 0 {
         cpu_parallelism
@@ -286,10 +346,10 @@ fn max_in_flight(
         .saturating_add(telemetry.serial.in_flight);
     let free = capacity.saturating_sub(already_in_flight).max(1);
 
-    if memory_pressure >= 0.85 {
+    if memory_pressure >= policy.high_memory_pressure {
         1
-    } else if memory_pressure >= 0.70 {
-        free.div_ceil(2).max(1)
+    } else if memory_pressure >= policy.medium_memory_pressure {
+        free.div_ceil(policy.medium_pressure_divisor.max(1)).max(1)
     } else {
         free
     }
@@ -301,12 +361,19 @@ fn residency_hint(
     mix: BackendMix,
     machine: &MachineProfile,
     memory_pressure: f64,
+    policy: PlannerPolicy,
 ) -> ResidencyHint {
-    if mix.gpu_weight == 0 || machine.gpus.is_empty() || memory_pressure >= 0.85 {
+    if mix.gpu_weight == 0
+        || machine.gpus.is_empty()
+        || memory_pressure >= policy.high_memory_pressure
+    {
         return ResidencyHint::None;
     }
 
-    if cost.backend == BackendKind::Gpu && cost.confidence >= 0.75 && work_items >= 1_000_000 {
+    if cost.backend == BackendKind::Gpu
+        && cost.confidence >= policy.residency_min_confidence
+        && work_items >= policy.keep_resident_min_items
+    {
         ResidencyHint::KeepResident
     } else {
         ResidencyHint::PreferDevice

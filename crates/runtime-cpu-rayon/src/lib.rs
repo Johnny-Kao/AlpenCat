@@ -14,9 +14,30 @@ use runtime_core::{ExecutionBudget, WorkRange};
 pub enum CpuExecutionKind {
     SerialBudget,
     SerialNested,
+    SerialExternalParallelism,
     SerialResourceLimited,
     Parallel,
     ParallelBudgetLimited,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CpuExecutionOptions {
+    pub budget: ExecutionBudget,
+    pub external_parallelism: bool,
+}
+
+impl CpuExecutionOptions {
+    pub const fn new(budget: ExecutionBudget) -> Self {
+        Self {
+            budget,
+            external_parallelism: false,
+        }
+    }
+
+    pub const fn with_external_parallelism(mut self, active: bool) -> Self {
+        self.external_parallelism = active;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -84,7 +105,27 @@ impl CpuAdapter {
         T: Send,
         F: Fn(usize) -> T + Sync + Send,
     {
-        let effective_parallelism = self.effective_parallelism(budget);
+        self.map_with_options(range, CpuExecutionOptions::new(budget), operation)
+    }
+
+    pub fn map_with_options<T, F>(
+        &self,
+        range: WorkRange,
+        options: CpuExecutionOptions,
+        operation: F,
+    ) -> CpuExecution<T>
+    where
+        T: Send,
+        F: Fn(usize) -> T + Sync + Send,
+    {
+        if options.external_parallelism {
+            return CpuExecution {
+                kind: CpuExecutionKind::SerialExternalParallelism,
+                values: (range.begin..range.end).map(operation).collect(),
+            };
+        }
+
+        let effective_parallelism = self.effective_parallelism(options.budget);
 
         if effective_parallelism <= 1 {
             return CpuExecution {
@@ -115,7 +156,7 @@ impl CpuAdapter {
         });
 
         CpuExecution {
-            kind: if effective_parallelism < budget.max_parallelism {
+            kind: if effective_parallelism < options.budget.max_parallelism {
                 CpuExecutionKind::ParallelBudgetLimited
             } else {
                 CpuExecutionKind::Parallel
@@ -172,5 +213,22 @@ mod tests {
             .unwrap_or(1);
 
         assert_eq!(effective, available);
+    }
+
+    #[test]
+    fn external_parallelism_uses_serial_wrapper_path_without_pool_creation() {
+        let adapter = CpuAdapter::default();
+        let execution = adapter.map_with_options(
+            WorkRange::new(0, 4096),
+            CpuExecutionOptions::new(ExecutionBudget::new(4))
+                .with_external_parallelism(true),
+            |index| index,
+        );
+
+        assert_eq!(
+            execution.kind,
+            CpuExecutionKind::SerialExternalParallelism
+        );
+        assert_eq!(adapter.cached_pool_count(), 0);
     }
 }

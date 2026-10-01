@@ -4,7 +4,7 @@
 //! snapshots and only asks the higher-level runtime to re-run M12+M13 when a
 //! material event is observed.
 
-use runtime_core::BackendKind;
+use runtime_core::{pressure_band, BackendKind, DEFAULT_PRESSURE_BANDS};
 use runtime_execution_planner::ExecutionPlan;
 use runtime_telemetry::{BackendTelemetrySnapshot, RuntimeTelemetrySnapshot};
 
@@ -74,7 +74,7 @@ impl Default for RebalancePolicy {
     fn default() -> Self {
         Self {
             min_completed_delta: 8,
-            pressure_bands: 4,
+            pressure_bands: DEFAULT_PRESSURE_BANDS,
             degradation_percent: 25,
         }
     }
@@ -178,17 +178,6 @@ fn failure_changed(previous: TelemetryWindow, current: TelemetryWindow) -> bool 
         || current.gpu.failed > previous.gpu.failed
 }
 
-fn pressure_band(in_flight: usize, slots: usize, bands: u8) -> u8 {
-    if slots == 0 {
-        return bands;
-    }
-    if in_flight >= slots {
-        return bands;
-    }
-    ((in_flight.saturating_mul(usize::from(bands))) / slots)
-        .min(usize::from(bands.saturating_sub(1))) as u8
-}
-
 fn material_pressure_change(
     previous: TelemetryWindow,
     current: TelemetryWindow,
@@ -196,7 +185,6 @@ fn material_pressure_change(
     gpu_slots: usize,
     bands: u8,
 ) -> bool {
-    let bands = bands.max(2);
     pressure_band(previous.cpu.in_flight, cpu_slots, bands)
         != pressure_band(current.cpu.in_flight, cpu_slots, bands)
         || pressure_band(previous.gpu.in_flight, gpu_slots, bands)

@@ -8,8 +8,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use runtime_broker::{BrokerCapacity, BrokerRequest, ResourceBroker};
-use runtime_core::BackendKind;
+use runtime_core::{pressure_band, BackendKind, DEFAULT_PRESSURE_BANDS};
 use runtime_telemetry::RuntimeTelemetrySnapshot;
+
+const DEFAULT_POLICY_CACHE_ENTRIES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyCacheStatus {
@@ -43,23 +45,21 @@ impl ResourceFingerprint {
         Self {
             cpu_slots: capacity.cpu_slots,
             gpu_slots: capacity.gpu_slots,
-            cpu_pressure_band: pressure_band(telemetry.cpu.in_flight, capacity.cpu_slots),
-            gpu_pressure_band: pressure_band(telemetry.gpu.in_flight, capacity.gpu_slots),
+            cpu_pressure_band: pressure_band(
+                telemetry.cpu.in_flight,
+                capacity.cpu_slots,
+                DEFAULT_PRESSURE_BANDS,
+            ),
+            gpu_pressure_band: pressure_band(
+                telemetry.gpu.in_flight,
+                capacity.gpu_slots,
+                DEFAULT_PRESSURE_BANDS,
+            ),
             gpu_range_eligible: request.gpu_range_eligible,
             cpu_failed: telemetry.cpu.failed,
             gpu_failed: telemetry.gpu.failed,
         }
     }
-}
-
-fn pressure_band(in_flight: usize, slots: usize) -> u8 {
-    if slots == 0 {
-        return 4;
-    }
-    if in_flight >= slots {
-        return 4;
-    }
-    ((in_flight.saturating_mul(4)) / slots).min(3) as u8
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -98,7 +98,7 @@ pub struct ExecutionPolicyCache {
 
 impl Default for ExecutionPolicyCache {
     fn default() -> Self {
-        Self::new(1024)
+        Self::new(DEFAULT_POLICY_CACHE_ENTRIES)
     }
 }
 
