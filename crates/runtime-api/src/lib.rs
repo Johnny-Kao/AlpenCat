@@ -745,6 +745,47 @@ impl Runtime {
                     },
                 }
             }
+            ExecutionMode::Auto if !implementations.gpu_range_eligible() => {
+                // CPU/serial-only work has no second range-aware backend to
+                // rebalance toward. Run M11.5/M12/M13/M15, but avoid splitting
+                // one Rayon operation into many sequential Rayon invocations.
+                let request = BrokerRequest {
+                    gpu_range_eligible: false,
+                };
+                let capacity = BrokerCapacity::new(
+                    self.cpu.effective_parallelism(self.config.execution_budget),
+                    0,
+                );
+                let preferred_backend = self
+                    .cached_execution_policy(task, range.len(), capacity, request)
+                    .map(|policy| policy.backend);
+                let plan = self.adaptive_execution_plan_with_preference(
+                    task,
+                    range.len(),
+                    capacity,
+                    request,
+                    preferred_backend,
+                );
+
+                let migration = IntegrationPolicy.decide(MigrationReadiness::validated(), &plan);
+                let mut lease = ExecutionLease::new(migration);
+                lease
+                    .commit_runtime()
+                    .expect("validated direct Runtime submission must be runtime-owned");
+
+                match plan.primary_backend {
+                    BackendKind::Serial => {
+                        (BackendKind::Serial, None, None, execute_serial(range))
+                    }
+                    BackendKind::Cpu => {
+                        let (backend, constraint, values) = execute_cpu(range);
+                        (backend, None, constraint, values)
+                    }
+                    BackendKind::Gpu => unreachable!(
+                        "GPU cannot be selected when no range-aware GPU implementation is registered"
+                    ),
+                }
+            }
             ExecutionMode::Auto => {
                 let request = BrokerRequest {
                     gpu_range_eligible: implementations.gpu_range_eligible(),

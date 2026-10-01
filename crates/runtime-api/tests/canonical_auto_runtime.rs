@@ -26,7 +26,7 @@ fn main(
 "#;
 
 #[test]
-fn canonical_auto_uses_cached_policy_and_chunked_runtime_path() {
+fn canonical_auto_cpu_uses_control_plane_without_overchunking() {
     let runtime = Runtime::new();
     let task = TaskDefinition::new("canonical-auto-cpu");
     let range = WorkRange::new(0, 65_536);
@@ -65,9 +65,10 @@ fn canonical_auto_uses_cached_policy_and_chunked_runtime_path() {
     );
 
     let telemetry = runtime.telemetry_snapshot();
-    assert!(
-        telemetry.cpu.completed + telemetry.serial.completed > 1,
-        "M10/M11 integration should execute more than one planned WorkUnit"
+    assert_eq!(
+        telemetry.cpu.completed + telemetry.serial.completed,
+        1,
+        "CPU-only Auto should preserve one whole-range execution instead of sequential Rayon chunks"
     );
 }
 
