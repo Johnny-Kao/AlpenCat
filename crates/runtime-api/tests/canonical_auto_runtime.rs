@@ -61,7 +61,10 @@ fn canonical_auto_range_gpu_failure_replans_and_falls_back() {
     let task = TaskDefinition::new("canonical-auto-gpu-failure");
     let range = WorkRange::new(0, 65_536);
     let machine = runtime.discover_machine_profile();
-    assert!(!machine.gpus.is_empty(), "GPU-required test needs a discovered GPU");
+    assert!(
+        !machine.gpus.is_empty(),
+        "GPU-required test needs a discovered GPU"
+    );
 
     for _ in 0..8 {
         runtime.record_detailed_cost_observation(
@@ -89,8 +92,9 @@ fn canonical_auto_range_gpu_failure_replans_and_falls_back() {
             &task,
             range,
             ExecutionMode::Auto,
-            RangeTaskImplementations::new(|i| i)
-                .with_gpu_range(|_gpu, _work| Err(RuntimeError::BackendExecutionFailed(BackendKind::Gpu))),
+            RangeTaskImplementations::new(|i| i).with_gpu_range(|_gpu, _work| {
+                Err(RuntimeError::BackendExecutionFailed(BackendKind::Gpu))
+            }),
         )
         .expect("GPU failure must remain recoverable inside Runtime");
 
