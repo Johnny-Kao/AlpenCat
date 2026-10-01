@@ -661,6 +661,19 @@ impl Runtime {
         T: Send,
         F: Fn(usize) -> T + Sync + Send,
     {
+        self.execute_cpu_with_budget(range, self.config.execution_budget, operation)
+    }
+
+    fn execute_cpu_with_budget<T, F>(
+        &self,
+        range: WorkRange,
+        budget: ExecutionBudget,
+        operation: F,
+    ) -> (BackendKind, Option<ExecutionConstraint>, Vec<T>)
+    where
+        T: Send,
+        F: Fn(usize) -> T + Sync + Send,
+    {
         if self.config.external_parallelism.active {
             return (
                 BackendKind::Serial,
@@ -669,7 +682,7 @@ impl Runtime {
             );
         }
 
-        let expected_backend = if self.cpu.effective_parallelism(self.config.execution_budget) <= 1
+        let expected_backend = if self.cpu.effective_parallelism(budget) <= 1
             || self.cpu.in_rayon_parallel_context()
         {
             BackendKind::Serial
@@ -677,7 +690,7 @@ impl Runtime {
             BackendKind::Cpu
         };
         let observation = self.telemetry.begin(expected_backend, range.len());
-        let execution = self.cpu.map(range, self.config.execution_budget, operation);
+        let execution = self.cpu.map(range, budget, operation);
         observation.success();
 
         match execution.kind {
@@ -778,9 +791,9 @@ impl Runtime {
             values
         };
 
-        let execute_cpu = |work: WorkRange| {
+        let execute_cpu = |work: WorkRange, budget: ExecutionBudget| {
             let started = std::time::Instant::now();
-            let (backend, constraint, values) = self.execute_cpu(work, element);
+            let (backend, constraint, values) = self.execute_cpu_with_budget(work, budget, element);
             match backend {
                 BackendKind::Serial => {
                     serial_units.set(serial_units.get().saturating_add(1));
@@ -843,13 +856,15 @@ impl Runtime {
                 ) {
                     BackendKind::Serial => (BackendKind::Serial, None, None, execute_serial(range)),
                     BackendKind::Cpu => {
-                        let (backend, constraint, values) = execute_cpu(range);
+                        let (backend, constraint, values) =
+                            execute_cpu(range, self.config.execution_budget);
                         (backend, None, constraint, values)
                     }
                     BackendKind::Gpu => match execute_gpu(range) {
                         Ok(values) => (BackendKind::Gpu, None, None, values),
                         Err(_) => {
-                            let (backend, constraint, values) = execute_cpu(range);
+                            let (backend, constraint, values) =
+                                execute_cpu(range, self.config.execution_budget);
                             (backend, Some(BackendKind::Gpu), constraint, values)
                         }
                     },
@@ -874,7 +889,12 @@ impl Runtime {
                         (BackendKind::Serial, None, None, execute_serial(range))
                     }
                     BackendKind::Cpu => {
-                        let (backend, constraint, values) = execute_cpu(range);
+                        let planned_parallelism = plan
+                            .cpu_parallelism
+                            .min(self.config.execution_budget.max_parallelism)
+                            .max(1);
+                        let (backend, constraint, values) =
+                            execute_cpu(range, ExecutionBudget::new(planned_parallelism));
                         (backend, None, constraint, values)
                     }
                     BackendKind::Gpu => unreachable!(
@@ -917,10 +937,16 @@ impl Runtime {
                         let broker_capacity = match plan.primary_backend {
                             BackendKind::Serial => BrokerCapacity::new(0, 0),
                             BackendKind::Cpu => BrokerCapacity::new(
-                                plan.cpu_parallelism.min(base_capacity.cpu_slots).max(1),
+                                plan.cpu_parallelism
+                                    .min(plan.max_in_flight)
+                                    .min(base_capacity.cpu_slots)
+                                    .max(1),
                                 0,
                             ),
-                            BackendKind::Gpu => BrokerCapacity::new(0, base_capacity.gpu_slots),
+                            BackendKind::Gpu => BrokerCapacity::new(
+                                0,
+                                base_capacity.gpu_slots.min(plan.max_in_flight),
+                            ),
                         };
 
                         let assignment = self.claim_next_work(&mut queue, broker_capacity, request);
@@ -929,8 +955,16 @@ impl Runtime {
                             let unit = assignment.unit;
                             match assignment.backend {
                                 BackendKind::Cpu => {
+                                    let planned_parallelism = plan
+                                        .cpu_parallelism
+                                        .min(plan.max_in_flight)
+                                        .min(self.config.execution_budget.max_parallelism)
+                                        .max(1);
                                     let (actual_backend, current_constraint, chunk) =
-                                        execute_cpu(unit.range);
+                                        execute_cpu(
+                                            unit.range,
+                                            ExecutionBudget::new(planned_parallelism),
+                                        );
                                     last_backend = actual_backend;
                                     if constraint.is_none() {
                                         constraint = current_constraint;
@@ -944,8 +978,16 @@ impl Runtime {
                                     }
                                     Err(_) => {
                                         fallback_from = Some(BackendKind::Gpu);
+                                        let planned_parallelism = plan
+                                            .cpu_parallelism
+                                            .min(plan.max_in_flight)
+                                            .min(self.config.execution_budget.max_parallelism)
+                                            .max(1);
                                         let (actual_backend, current_constraint, chunk) =
-                                            execute_cpu(unit.range);
+                                            execute_cpu(
+                                                unit.range,
+                                                ExecutionBudget::new(planned_parallelism),
+                                            );
                                         last_backend = actual_backend;
                                         if constraint.is_none() {
                                             constraint = current_constraint;
@@ -991,7 +1033,8 @@ impl Runtime {
             }
             ExecutionMode::Serial => (BackendKind::Serial, None, None, execute_serial(range)),
             ExecutionMode::Cpu => {
-                let (backend, constraint, values) = execute_cpu(range);
+                let (backend, constraint, values) =
+                    execute_cpu(range, self.config.execution_budget);
                 (backend, None, constraint, values)
             }
             ExecutionMode::Gpu => (BackendKind::Gpu, None, None, execute_gpu(range)?),
