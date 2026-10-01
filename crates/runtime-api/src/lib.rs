@@ -652,18 +652,6 @@ impl Runtime {
         values
     }
 
-    fn execute_cpu<T, F>(
-        &self,
-        range: WorkRange,
-        operation: F,
-    ) -> (BackendKind, Option<ExecutionConstraint>, Vec<T>)
-    where
-        T: Send,
-        F: Fn(usize) -> T + Sync + Send,
-    {
-        self.execute_cpu_with_budget(range, self.config.execution_budget, operation)
-    }
-
     fn execute_cpu_with_budget<T, F>(
         &self,
         range: WorkRange,
