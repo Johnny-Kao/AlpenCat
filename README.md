@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="https://raw.githubusercontent.com/Johnny-Kao/AlpenCat/main/branding/alpencat-logo.jpg" width="700" alt="AlpenCat — Adaptive Execution Runtime">
+  <img src="https://raw.githubusercontent.com/Johnny-Kao/AlpenCat/main/branding/alpencat-logo.png" width="800" alt="AlpenCat — Adaptive Execution Runtime">
 </h1>
 <br>
 
