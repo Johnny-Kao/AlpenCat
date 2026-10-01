@@ -960,11 +960,10 @@ impl Runtime {
                                         .min(plan.max_in_flight)
                                         .min(self.config.execution_budget.max_parallelism)
                                         .max(1);
-                                    let (actual_backend, current_constraint, chunk) =
-                                        execute_cpu(
-                                            unit.range,
-                                            ExecutionBudget::new(planned_parallelism),
-                                        );
+                                    let (actual_backend, current_constraint, chunk) = execute_cpu(
+                                        unit.range,
+                                        ExecutionBudget::new(planned_parallelism),
+                                    );
                                     last_backend = actual_backend;
                                     if constraint.is_none() {
                                         constraint = current_constraint;
