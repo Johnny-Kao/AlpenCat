@@ -211,5 +211,9 @@ fn canonical_auto_range_gpu_executes_chunked_registered_work() {
         telemetry.gpu.completed > 1,
         "M10/M11 should dispatch multiple GPU WorkUnits through the registered wrapper"
     );
-    assert!(runtime.cached_policy_count() > 0);
+    assert_eq!(
+        runtime.cached_policy_count(),
+        0,
+        "ordinary Auto tasks must not enter the M11.5 hot-path cache unless explicitly opted in"
+    );
 }
