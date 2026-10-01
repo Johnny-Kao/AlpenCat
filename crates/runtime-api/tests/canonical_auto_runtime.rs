@@ -55,6 +55,7 @@ fn canonical_auto_cpu_uses_control_plane_without_overchunking() {
             RangeTaskImplementations::new(|i| i * 2),
         )
         .expect("canonical Auto execution must succeed");
+    let trace = handle.trace();
     let result = runtime.wait(handle);
 
     assert_eq!(result.value.len(), range.len());
@@ -70,6 +71,8 @@ fn canonical_auto_cpu_uses_control_plane_without_overchunking() {
         1,
         "CPU-only Auto should preserve one whole-range execution instead of sequential Rayon chunks"
     );
+    assert_eq!(trace.gpu_units, 0);
+    assert_eq!(trace.replans, 0);
 }
 
 #[test]
@@ -119,8 +122,13 @@ fn canonical_auto_range_gpu_failure_replans_and_falls_back() {
         )
         .expect("GPU failure must remain recoverable inside Runtime");
 
+    let trace = handle.trace();
     assert_eq!(handle.decision().fallback_from, Some(BackendKind::Gpu));
     assert_eq!(handle.decision().backend, BackendKind::Cpu);
+    assert!(trace.gpu_units >= 1);
+    assert!(trace.gpu_failures >= 1);
+    assert!(trace.cpu_units >= 1);
+    assert!(trace.replans >= 1);
 
     let result = runtime.wait(handle);
     assert_eq!(result.value.len(), range.len());
@@ -188,8 +196,11 @@ fn canonical_auto_range_gpu_executes_chunked_registered_work() {
         )
         .expect("range-aware GPU Auto execution must succeed");
 
+    let trace = handle.trace();
     assert_eq!(handle.decision().backend, BackendKind::Gpu);
     assert_eq!(handle.decision().fallback_from, None);
+    assert!(trace.gpu_units > 1);
+    assert_eq!(trace.gpu_failures, 0);
 
     let result = runtime.wait(handle);
     let expected: Vec<f32> = input.iter().map(|value| alpha * *value).collect();

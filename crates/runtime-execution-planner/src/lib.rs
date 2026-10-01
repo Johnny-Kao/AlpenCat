@@ -50,12 +50,22 @@ impl BackendMix {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPlan {
     pub primary_backend: BackendKind,
+    /// Advisory backend proportions for an executor that can overlap multiple
+    /// backend lanes. The v0.1 synchronous executor currently uses
+    /// `primary_backend` for one WorkUnit at a time and does not claim that
+    /// these weights are concurrently enforced.
     pub backend_mix: BackendMix,
     pub cpu_parallelism: usize,
     pub chunk_size: usize,
+    /// Advisory concurrency ceiling. It becomes an execution constraint only
+    /// for executors that can keep multiple WorkUnits in flight concurrently.
     pub max_in_flight: usize,
+    /// Planner-side working-memory budget. The v0.1 range executor uses it to
+    /// derive policy but does not reserve or enforce process memory.
     pub memory_budget_bytes: Option<u64>,
     pub gpu_device: Option<String>,
+    /// Advisory data-residency preference. Current wgpu range dispatches do not
+    /// yet promise persistent device residency across WorkUnits.
     pub residency_hint: ResidencyHint,
     pub confidence_milli: u16,
 }

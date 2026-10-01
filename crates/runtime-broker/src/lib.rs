@@ -1,7 +1,12 @@
-//! Dynamic resource-broker primitives.
+//! Pending-work resource-broker primitives.
 //!
 //! The broker chooses where the next pending WorkUnit should go based on
 //! current runtime-owned pressure. It does not yet model execution cost.
+//!
+//! In the v0.1 canonical executor, WorkUnits are dispatched synchronously, so
+//! this boundary should not be described as a concurrent CPU/GPU load balancer.
+//! It becomes pressure-dynamic when overlapping work or other runtime-owned
+//! submissions make the telemetry snapshot differ between claims.
 
 use runtime_core::BackendKind;
 use runtime_planner::{WorkQueue, WorkUnit};

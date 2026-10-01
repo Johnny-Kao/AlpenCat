@@ -3,6 +3,7 @@
 //! M7 adds explicit execution budgets and nested-Rayon protection while
 //! preserving serial, CPU, GPU, selector, and calibration behavior.
 
+use std::cell::Cell;
 use std::sync::OnceLock;
 
 use runtime_broker::ResourceBroker;
@@ -100,6 +101,25 @@ pub struct ExecutionDecision {
     pub backend: BackendKind,
     pub fallback_from: Option<BackendKind>,
     pub constraint: Option<ExecutionConstraint>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ExecutionTrace {
+    pub serial_units: u64,
+    pub cpu_units: u64,
+    pub gpu_units: u64,
+    pub gpu_failures: u64,
+    pub replans: u32,
+}
+
+impl ExecutionTrace {
+    pub const fn used_backend(self, backend: BackendKind) -> bool {
+        match backend {
+            BackendKind::Serial => self.serial_units > 0,
+            BackendKind::Cpu => self.cpu_units > 0,
+            BackendKind::Gpu => self.gpu_units > 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -347,6 +367,75 @@ impl Runtime {
         AdaptiveExecutionPlanner.plan(PlannerContext {
             work_items,
             cost,
+            machine: &machine,
+            telemetry,
+            gpu_range_eligible: gpu_eligible,
+        })
+    }
+
+    fn cached_adaptive_execution_plan(
+        &self,
+        task: &TaskDefinition,
+        work_items: usize,
+        capacity: BrokerCapacity,
+        request: BrokerRequest,
+    ) -> ExecutionPlan {
+        let telemetry = self.telemetry.snapshot();
+        let gpu_eligible = request.gpu_range_eligible && capacity.gpu_slots > 0;
+        let machine = if gpu_eligible {
+            self.discover_machine_profile()
+        } else {
+            MachineProfile::host_only()
+        };
+
+        let mut miss_plan = None;
+        let cached = self.policy_cache.resolve_with(
+            task.id,
+            work_items,
+            telemetry,
+            capacity,
+            request,
+            || {
+                let cost = self.cost_model.decide(
+                    task.id,
+                    work_items,
+                    CostModelContext {
+                        cpu_eligible: capacity.cpu_slots > 0,
+                        gpu_eligible,
+                        machine: &machine,
+                        telemetry,
+                        bootstrap: self.calibration_for(task),
+                    },
+                );
+                let plan = AdaptiveExecutionPlanner.plan(PlannerContext {
+                    work_items,
+                    cost,
+                    machine: &machine,
+                    telemetry,
+                    gpu_range_eligible: gpu_eligible,
+                });
+                let backend = plan.primary_backend;
+                miss_plan = Some(plan);
+                Some(backend)
+            },
+        );
+
+        if let Some(plan) = miss_plan {
+            return plan;
+        }
+
+        let backend = cached
+            .map(|policy| policy.backend)
+            .unwrap_or(BackendKind::Serial);
+        AdaptiveExecutionPlanner.plan(PlannerContext {
+            work_items,
+            cost: CostModelDecision {
+                backend,
+                confidence: 0.0,
+                serial: None,
+                cpu: None,
+                gpu: None,
+            },
             machine: &machine,
             telemetry,
             gpu_range_eligible: gpu_eligible,
@@ -643,6 +732,10 @@ impl Runtime {
                 fallback_from: None,
                 constraint: None,
             },
+            trace: ExecutionTrace {
+                serial_units: 1,
+                ..ExecutionTrace::default()
+            },
             result,
         })
     }
@@ -666,8 +759,14 @@ impl Runtime {
             MachineProfile::host_only()
         };
         let machine_fingerprint = MachineFingerprint::from_machine(&observed_machine);
+        let serial_units = Cell::new(0u64);
+        let cpu_units = Cell::new(0u64);
+        let gpu_units = Cell::new(0u64);
+        let gpu_failures = Cell::new(0u64);
+        let replans = Cell::new(0u32);
 
         let execute_serial = |work: WorkRange| {
+            serial_units.set(serial_units.get().saturating_add(1));
             let started = std::time::Instant::now();
             let values = self.execute_serial_map(work, element);
             self.cost_model.observe_detailed(
@@ -682,6 +781,15 @@ impl Runtime {
         let execute_cpu = |work: WorkRange| {
             let started = std::time::Instant::now();
             let (backend, constraint, values) = self.execute_cpu(work, element);
+            match backend {
+                BackendKind::Serial => {
+                    serial_units.set(serial_units.get().saturating_add(1));
+                }
+                BackendKind::Cpu => {
+                    cpu_units.set(cpu_units.get().saturating_add(1));
+                }
+                BackendKind::Gpu => unreachable!("CPU adapter cannot return GPU execution"),
+            }
             self.cost_model.observe_detailed(
                 task.id,
                 backend,
@@ -692,6 +800,7 @@ impl Runtime {
         };
 
         let execute_gpu = |work: WorkRange| -> Result<Vec<T>, RuntimeError> {
+            gpu_units.set(gpu_units.get().saturating_add(1));
             let started = std::time::Instant::now();
             let observation = self.telemetry.begin(BackendKind::Gpu, work.len());
             let result = (|| {
@@ -708,6 +817,7 @@ impl Runtime {
             if success {
                 observation.success();
             } else {
+                gpu_failures.set(gpu_failures.get().saturating_add(1));
                 observation.failure();
             }
             self.cost_model.observe_detailed(
@@ -756,22 +866,8 @@ impl Runtime {
                     self.cpu.effective_parallelism(self.config.execution_budget),
                     0,
                 );
-                let preferred_backend = self
-                    .cached_execution_policy(task, range.len(), capacity, request)
-                    .map(|policy| policy.backend);
-                let plan = self.adaptive_execution_plan_with_preference(
-                    task,
-                    range.len(),
-                    capacity,
-                    request,
-                    preferred_backend,
-                );
-
-                let migration = IntegrationPolicy.decide(MigrationReadiness::validated(), &plan);
-                let mut lease = ExecutionLease::new(migration);
-                lease
-                    .commit_runtime()
-                    .expect("validated direct Runtime submission must be runtime-owned");
+                let plan =
+                    self.cached_adaptive_execution_plan(task, range.len(), capacity, request);
 
                 match plan.primary_backend {
                     BackendKind::Serial => {
@@ -798,24 +894,8 @@ impl Runtime {
                 // M11.5 supplies a stable preferred route. M12/M13 still produce
                 // the complete execution plan; M14 invalidates this cache when a
                 // material event requires replanning.
-                let preferred_backend = self
-                    .cached_execution_policy(task, range.len(), base_capacity, request)
-                    .map(|policy| policy.backend);
-                let mut plan = self.adaptive_execution_plan_with_preference(
-                    task,
-                    range.len(),
-                    base_capacity,
-                    request,
-                    preferred_backend,
-                );
-
-                // A direct Runtime submission has already crossed the adopter
-                // boundary. Commit M15 ownership before any work executes.
-                let migration = IntegrationPolicy.decide(MigrationReadiness::validated(), &plan);
-                let mut lease = ExecutionLease::new(migration);
-                lease
-                    .commit_runtime()
-                    .expect("validated direct Runtime submission must be runtime-owned");
+                let mut plan =
+                    self.cached_adaptive_execution_plan(task, range.len(), base_capacity, request);
 
                 if plan.primary_backend == BackendKind::Serial {
                     (BackendKind::Serial, None, None, execute_serial(range))
@@ -901,6 +981,7 @@ impl Runtime {
                             base_capacity,
                             request,
                         ) {
+                            replans.set(replans.get().saturating_add(1));
                             plan = update.plan;
                         }
                     }
@@ -922,6 +1003,13 @@ impl Runtime {
                 backend,
                 fallback_from,
                 constraint,
+            },
+            trace: ExecutionTrace {
+                serial_units: serial_units.get(),
+                cpu_units: cpu_units.get(),
+                gpu_units: gpu_units.get(),
+                gpu_failures: gpu_failures.get(),
+                replans: replans.get(),
             },
             result,
         })
@@ -960,6 +1048,7 @@ impl Runtime {
         TaskResult {
             task_id: handle.task_id,
             decision: handle.decision,
+            trace: handle.trace,
             value: handle.result,
         }
     }
@@ -969,6 +1058,7 @@ impl Runtime {
 pub struct TaskHandle<T> {
     task_id: &'static str,
     decision: ExecutionDecision,
+    trace: ExecutionTrace,
     result: T,
 }
 
@@ -976,11 +1066,16 @@ impl<T> TaskHandle<T> {
     pub const fn decision(&self) -> ExecutionDecision {
         self.decision
     }
+
+    pub const fn trace(&self) -> ExecutionTrace {
+        self.trace
+    }
 }
 
 #[derive(Debug)]
 pub struct TaskResult<T> {
     pub task_id: &'static str,
     pub decision: ExecutionDecision,
+    pub trace: ExecutionTrace,
     pub value: T,
 }
