@@ -74,13 +74,7 @@ fn one_task_can_manually_traverse_m8_to_m15_components() {
     let result = runtime.wait(handle);
     assert_eq!(result.decision.backend, BackendKind::Cpu);
 
-    let _ = runtime.rebalance_if_needed(
-        &mut session,
-        &task,
-        range.len() - 4096,
-        capacity,
-        request,
-    );
+    let _ = runtime.rebalance_if_needed(&mut session, &task, range.len() - 4096, capacity, request);
 
     // M15: validated work can be assigned to runtime ownership.
     let migration = runtime.migration_plan(
