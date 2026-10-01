@@ -57,8 +57,10 @@ pub struct ExecutionPlan {
     pub backend_mix: BackendMix,
     pub cpu_parallelism: usize,
     pub chunk_size: usize,
-    /// Advisory concurrency ceiling. It becomes an execution constraint only
-    /// for executors that can keep multiple WorkUnits in flight concurrently.
+    /// Concurrency ceiling. The v0.1 executor uses it to cap planned CPU
+    /// parallelism and GPU slot capacity. Because WorkUnits are currently
+    /// dispatched synchronously, it does not yet represent multiple
+    /// simultaneously in-flight WorkUnits within one submission.
     pub max_in_flight: usize,
     /// Planner-side working-memory budget. The v0.1 range executor uses it to
     /// derive policy but does not reserve or enforce process memory.

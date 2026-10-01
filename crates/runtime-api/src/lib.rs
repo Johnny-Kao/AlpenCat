@@ -112,17 +112,26 @@ pub enum ExecutionConstraint {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecutionDecision {
+    /// Backend that completed the whole-task execution or the final WorkUnit in
+    /// a chunked execution. Use \`ExecutionTrace\` for the full multi-backend
+    /// history of an adaptive submission.
     pub backend: BackendKind,
+    /// Backend whose failed attempt caused a fallback, if one occurred.
     pub fallback_from: Option<BackendKind>,
     pub constraint: Option<ExecutionConstraint>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExecutionTrace {
+    /// Serial WorkUnits that completed successfully.
     pub serial_units: u64,
+    /// CPU WorkUnits that completed successfully.
     pub cpu_units: u64,
+    /// GPU execution attempts. Failed attempts are included and separately
+    /// counted by \`gpu_failures\`.
     pub gpu_units: u64,
     pub gpu_failures: u64,
+    /// Number of M14-triggered replans applied to remaining work.
     pub replans: u32,
 }
 
@@ -888,7 +897,8 @@ impl Runtime {
             }
             ExecutionMode::Auto if !implementations.gpu_range_eligible() => {
                 // CPU/serial-only work has no second range-aware backend to
-                // rebalance toward. Run M11.5/M12/M13/M15, but avoid splitting
+                // rebalance toward. Run M12/M13 (plus optional M11.5 caching),
+                // but avoid splitting
                 // one Rayon operation into many sequential Rayon invocations.
                 let request = BrokerRequest {
                     gpu_range_eligible: false,
@@ -926,9 +936,10 @@ impl Runtime {
                     usize::from(request.gpu_range_eligible && !observed_machine.gpus.is_empty()),
                 );
 
-                // M11.5 supplies a stable preferred route. M12/M13 still produce
-                // the complete execution plan; M14 invalidates this cache when a
-                // material event requires replanning.
+                // M12/M13 produce the complete execution plan. Tasks that
+                // explicitly opt into M11.5 may reuse a stable preferred route;
+                // M14 invalidates that cache when a material event requires
+                // replanning.
                 let mut plan =
                     self.canonical_execution_plan(task, range.len(), base_capacity, request);
 
