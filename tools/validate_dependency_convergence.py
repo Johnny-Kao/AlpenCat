@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import tomllib
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,8 +19,13 @@ REQUIRED = {
     "convergence_state",
     "package",
     "version_requirement",
+    "resolved_version",
     "upstream_repo",
+    "introduced_at",
+    "last_validated_at",
+    "manifest_paths",
     "wrapper_paths",
+    "usage_markers",
     "contract",
     "upgrade_checks",
     "removal_rule",
@@ -47,9 +53,31 @@ def load(path: Path) -> dict:
         return tomllib.load(handle)
 
 
-def cargo_packages() -> set[str]:
+def cargo_packages() -> dict[str, set[str]]:
     lock = load(CARGO_LOCK)
-    return {package["name"] for package in lock.get("package", [])}
+    packages: dict[str, set[str]] = {}
+    for package in lock.get("package", []):
+        packages.setdefault(package["name"], set()).add(package["version"])
+    return packages
+
+
+def manifest_requirement(path: Path, package: str) -> str | None:
+    data = load(path)
+    sections = [
+        data.get("dependencies", {}),
+        data.get("dev-dependencies", {}),
+        data.get("build-dependencies", {}),
+    ]
+    for section in sections:
+        if package not in section:
+            continue
+        value = section[package]
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            version = value.get("version")
+            return version if isinstance(version, str) else None
+    return None
 
 
 def main() -> int:
@@ -98,18 +126,71 @@ def main() -> int:
         if not dependency["removal_rule"]:
             raise ValueError(f"dependency {dep_id}: empty removal_rule")
 
+        try:
+            introduced_at = date.fromisoformat(dependency["introduced_at"])
+            last_validated_at = date.fromisoformat(dependency["last_validated_at"])
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"dependency {dep_id}: invalid introduced_at/last_validated_at date"
+            ) from error
+        if last_validated_at < introduced_at:
+            raise ValueError(
+                f"dependency {dep_id}: last_validated_at precedes introduced_at"
+            )
+
+        if not dependency["manifest_paths"]:
+            raise ValueError(f"dependency {dep_id}: empty manifest_paths")
+        for manifest in dependency["manifest_paths"]:
+            manifest_path = ROOT / manifest
+            if not manifest_path.exists():
+                raise ValueError(
+                    f"dependency {dep_id}: manifest path does not exist: {manifest}"
+                )
+            requirement = manifest_requirement(manifest_path, dependency["package"])
+            if requirement is None:
+                raise ValueError(
+                    f"dependency {dep_id}: package {dependency['package']} not declared "
+                    f"in {manifest}"
+                )
+            if requirement != dependency["version_requirement"]:
+                raise ValueError(
+                    f"dependency {dep_id}: manifest requirement {requirement!r} in "
+                    f"{manifest} does not match ledger "
+                    f"{dependency['version_requirement']!r}"
+                )
+
         for wrapper in dependency["wrapper_paths"]:
             if not (ROOT / wrapper).exists():
                 raise ValueError(
                     f"dependency {dep_id}: wrapper path does not exist: {wrapper}"
                 )
 
+        if ownership != "compatibility_pin" and not dependency["usage_markers"]:
+            raise ValueError(f"dependency {dep_id}: empty usage_markers")
+        wrapper_text = "\n".join(
+            (ROOT / wrapper).read_text(encoding="utf-8", errors="replace")
+            for wrapper in dependency["wrapper_paths"]
+        )
+        for marker in dependency["usage_markers"]:
+            if marker not in wrapper_text:
+                raise ValueError(
+                    f"dependency {dep_id}: usage marker not found in wrapper paths: "
+                    f"{marker!r}"
+                )
+
         if status == "active":
             active += 1
-            if dependency["package"] not in lock_packages:
+            package_versions = lock_packages.get(dependency["package"])
+            if package_versions is None:
                 raise ValueError(
                     f"dependency {dep_id}: active package "
                     f"{dependency['package']} missing from Cargo.lock"
+                )
+            if dependency["resolved_version"] not in package_versions:
+                raise ValueError(
+                    f"dependency {dep_id}: resolved_version "
+                    f"{dependency['resolved_version']} not present in Cargo.lock; "
+                    f"found {sorted(package_versions)}"
                 )
             if dep_id not in reconciliation_ids:
                 raise ValueError(
