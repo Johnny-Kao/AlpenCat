@@ -1,0 +1,66 @@
+name: AlpenCat Multi-Kernel Crossover Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "experiments/target-scenario/metal_fft_bench.mm"
+      - "experiments/target-scenario/metal_reduction_bench.mm"
+      - "experiments/target-scenario/analyze_multikernel.py"
+      - ".github/workflows/target-scenario-multikernel.yml"
+
+jobs:
+  multikernel:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record runner metadata
+        run: |
+          mkdir -p multikernel
+          {
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            uname -a
+            sysctl -n machdep.cpu.brand_string || true
+            sysctl hw.memsize || true
+            system_profiler SPHardwareDataType SPDisplaysDataType || true
+            vm_stat || true
+            pmset -g therm || true
+          } > multikernel/runner_metadata.txt
+
+      - name: Build FFT and reduction benchmarks
+        run: |
+          clang++ -O3 -std=c++17 -fobjc-arc \
+            experiments/target-scenario/metal_fft_bench.mm \
+            -framework Foundation -framework Metal \
+            -o /tmp/metal_fft_bench
+          clang++ -O3 -std=c++17 -fobjc-arc \
+            experiments/target-scenario/metal_reduction_bench.mm \
+            -framework Foundation -framework Metal \
+            -o /tmp/metal_reduction_bench
+
+      - name: Run repeated idle validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for rep in 1 2 3 4 5 6 7; do
+            /tmp/metal_fft_bench > "multikernel/fft_${rep}.txt"
+            /tmp/metal_reduction_bench > "multikernel/reduction_${rep}.txt"
+            vm_stat > "multikernel/vm_${rep}.txt" || true
+          done
+
+      - name: Analyze confidence and regret
+        run: |
+          python3 experiments/target-scenario/analyze_multikernel.py \
+            | tee multikernel/summary.md
+
+      - name: Upload raw evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: multikernel-metal-${{ github.run_id }}
+          path: multikernel/
+          retention-days: 30
