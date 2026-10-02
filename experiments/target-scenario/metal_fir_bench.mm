@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <cerrno>
+#include <sys/mman.h>
 
 static const char *kShader = R"METAL(
 #include <metal_stdlib>
@@ -45,10 +47,12 @@ static double median(std::vector<double> values) {
     return values[values.size() / 2];
 }
 
-static size_t iterations_for(size_t n, size_t taps) {
-    const size_t target_ops = 8'000'000;
+static size_t iterations_for(size_t n, size_t taps, bool focus) {
+    const size_t target_ops = focus ? 16'000'000 : 8'000'000;
     size_t iters = target_ops / std::max<size_t>(1, n * taps);
-    return std::max<size_t>(5, std::min<size_t>(100, iters));
+    const size_t min_iters = focus ? 15 : 5;
+    const size_t max_iters = focus ? 80 : 100;
+    return std::max<size_t>(min_iters, std::min<size_t>(max_iters, iters));
 }
 
 static double run_cpu(
@@ -164,6 +168,15 @@ int main() {
         float *y_gpu = static_cast<float *>(y_gpu_buf.contents);
         std::vector<float> y_cpu(max_n);
 
+        std::memset(y_gpu_buf.contents, 0, y_gpu_buf.length);
+        std::fill(y_cpu.begin(), y_cpu.end(), 0.0f);
+
+        const int lock_x = mlock(x_buf.contents, x_buf.length);
+        const int lock_h = mlock(h_buf.contents, h_buf.length);
+        const int lock_y = mlock(y_gpu_buf.contents, y_gpu_buf.length);
+
+        const bool focus = std::getenv("ALPENCAT_FOCUS") != nullptr;
+
         for (size_t i = 0; i < x_count; ++i) {
             const int centered = static_cast<int>(i % 97) - 48;
             x[i] = static_cast<float>(centered) * 0.001f;
@@ -177,14 +190,32 @@ int main() {
         std::printf("unified_memory=%s\n", device.hasUnifiedMemory ? "true" : "false");
         std::printf("storage_mode=shared\n");
         std::printf("gpu_measurement=host_submit_to_completion_and_device_interval\n");
+        std::printf("focus_mode=%s\n", focus ? "true" : "false");
+        std::printf("x_addr=%p h_addr=%p y_gpu_addr=%p y_cpu_addr=%p\n",
+                    x_buf.contents, h_buf.contents, y_gpu_buf.contents, y_cpu.data());
+        std::printf("mlock_x=%d mlock_h=%d mlock_y=%d errno=%d\n",
+                    lock_x, lock_h, lock_y, errno);
         std::printf("| taps | n | iters | cpu_p50_ns | gpu_host_p50_ns | gpu_device_p50_ns | winner | winner_gain_pct |\n");
         std::printf("|---:|---:|---:|---:|---:|---:|---|---:|\n");
 
         for (size_t taps : {16ul, 64ul, 128ul}) {
-            for (size_t n : {
-                     64ul, 128ul, 256ul, 512ul, 1024ul, 2048ul,
-                     4096ul, 8192ul, 16384ul, 32768ul, 65536ul,
-                     131072ul, 262144ul}) {
+            std::vector<size_t> sizes;
+            if (focus) {
+                if (taps == 16) {
+                    sizes = {65536ul, 131072ul, 262144ul};
+                } else if (taps == 64) {
+                    sizes = {32768ul, 65536ul, 131072ul};
+                } else {
+                    sizes = {8192ul, 16384ul, 32768ul};
+                }
+            } else {
+                sizes = {
+                    64ul, 128ul, 256ul, 512ul, 1024ul, 2048ul,
+                    4096ul, 8192ul, 16384ul, 32768ul, 65536ul,
+                    131072ul, 262144ul
+                };
+            }
+            for (size_t n : sizes) {
 
                 // Correctness check outside timed samples.
                 fir_cpu(x, h, y_cpu.data(), n, taps);
@@ -213,7 +244,7 @@ int main() {
                                   static_cast<uint32_t>(taps));
                 }
 
-                const size_t iters = iterations_for(n, taps);
+                const size_t iters = iterations_for(n, taps, focus);
                 std::vector<double> cpu_samples;
                 std::vector<double> gpu_host_samples;
                 std::vector<double> gpu_device_samples;
