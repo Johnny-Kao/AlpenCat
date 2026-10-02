@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "purpose": "Cross-machine validation, not per-machine parameter tuning",
+  "frozen_at": "2026-10-03",
+  "policy": {
+    "no_mid_campaign_retuning": true,
+    "primary_metrics": [
+      "decision_latency",
+      "mean_regret",
+      "p95_regret",
+      "max_regret",
+      "winner_stability",
+      "recalibration_frequency",
+      "state_footprint"
+    ]
+  },
+  "host_matrix": [
+    {"id":"linux-x64","runner":"ubuntu-24.04","arch":"x64"},
+    {"id":"linux-arm64","runner":"ubuntu-24.04-arm","arch":"arm64"},
+    {"id":"macos-intel","runner":"macos-15-intel","arch":"x64"},
+    {"id":"macos-arm64","runner":"macos-15","arch":"arm64"},
+    {"id":"windows-x64","runner":"windows-2025","arch":"x64"},
+    {"id":"windows-arm64","runner":"windows-11-arm","arch":"arm64"}
+  ],
+  "kernel_families": ["FIR","FFT","Reduction"],
+  "load_classes": ["idle","cpu_light","gpu_light","memory_bandwidth","mixed"],
+  "repetitions": {
+    "microbenchmark_processes": 5,
+    "metal_kernel_processes": 5
+  },
+  "cold_start": {
+    "record_separately": true,
+    "exclude_from_primary_warm_statistics": true
+  },
+  "notes": [
+    "Standard hosted runners are used first.",
+    "GPU crossover runs only where a real supported accelerator path is available.",
+    "Apple M5 local measurements are secondary/noisy reference only and are not required for this campaign."
+  ]
+}
