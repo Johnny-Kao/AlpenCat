@@ -68,8 +68,13 @@ fn route_code(backend: BackendKind) -> c_int {
 }
 
 fn iters_for(n: usize) -> usize {
-    let target_elements = 20_000_000usize;
-    (target_elements / n).clamp(20_000, 2_000_000)
+    let target_elements = 5_000_000usize;
+    (target_elements / n).clamp(5_000, 500_000)
+}
+
+fn median(values: &mut [f64]) -> f64 {
+    values.sort_by(|a, b| a.partial_cmp(b).expect("finite benchmark value"));
+    values[values.len() / 2]
 }
 
 fn bench_kernel_only(n: usize, iters: usize, x: &[f32], y: &mut [f32]) -> f64 {
@@ -177,7 +182,8 @@ fn bench_c_fast_route(n: usize, iters: usize, x: &[f32], y: &mut [f32]) -> f64 {
 
 fn main() {
     println!("# FastRoute end-to-end native-kernel benchmark");
-    println!("| n | iters | kernel_ns | rust_cache_ns | c_fast_ns | c_vs_rust_speedup | c_total_gain |");
+    println!("trials=5");
+    println!("| n | iters | kernel_p50_ns | rust_cache_p50_ns | c_fast_p50_ns | c_vs_rust_speedup | c_total_gain |");
     println!("|---:|---:|---:|---:|---:|---:|---:|");
 
     let mut checksum = 0.0f32;
@@ -185,13 +191,36 @@ fn main() {
     for n in [8usize, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096] {
         let iters = iters_for(n);
         let x = vec![0.25f32; n];
+        let mut kernel_samples = Vec::with_capacity(5);
+        let mut rust_samples = Vec::with_capacity(5);
+        let mut c_samples = Vec::with_capacity(5);
         let mut y_kernel = vec![1.0f32; n];
         let mut y_rust = vec![1.0f32; n];
         let mut y_c = vec![1.0f32; n];
 
-        let kernel_ns = bench_kernel_only(n, iters, &x, &mut y_kernel);
-        let rust_ns = bench_rust_cache(n, iters, &x, &mut y_rust);
-        let c_ns = bench_c_fast_route(n, iters, &x, &mut y_c);
+        for trial in 0..5 {
+            match trial % 3 {
+                0 => {
+                    kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
+                    rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
+                    c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
+                }
+                1 => {
+                    c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
+                    kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
+                    rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
+                }
+                _ => {
+                    rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
+                    c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
+                    kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
+                }
+            }
+        }
+
+        let kernel_ns = median(&mut kernel_samples);
+        let rust_ns = median(&mut rust_samples);
+        let c_ns = median(&mut c_samples);
 
         let speedup = rust_ns / c_ns;
         let total_gain = 100.0 * (rust_ns - c_ns) / rust_ns;
@@ -202,7 +231,7 @@ fn main() {
             "| {n} | {iters} | {kernel_ns:.2} | {rust_ns:.2} | {c_ns:.2} | {speedup:.3}x | {total_gain:.2}% |"
         );
         println!(
-            "e2e n={n} iters={iters} kernel_ns={kernel_ns:.4} rust_cache_ns={rust_ns:.4} c_fast_ns={c_ns:.4} speedup={speedup:.6} gain_pct={total_gain:.4}"
+            "e2e_p50 n={n} iters={iters} kernel_ns={kernel_ns:.4} rust_cache_ns={rust_ns:.4} c_fast_ns={c_ns:.4} speedup={speedup:.6} gain_pct={total_gain:.4}"
         );
     }
 
