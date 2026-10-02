@@ -1,0 +1,15 @@
+[package]
+name = "runtime-fast-route-e2e-benchmark"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+publish = false
+build = "build.rs"
+
+[dependencies]
+runtime-broker = { path = "../../crates/runtime-broker" }
+runtime-core = { path = "../../crates/runtime-core" }
+runtime-policy-cache = { path = "../../crates/runtime-policy-cache" }
+runtime-telemetry = { path = "../../crates/runtime-telemetry" }
+
+[workspace]
