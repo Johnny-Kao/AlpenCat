@@ -79,6 +79,18 @@ jobs:
         run: |
           ./replay_read_scaling
 
+      - name: Build work-pool comparison
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 -pthread \
+            experiments/c-fast-route/work_pool_compare.c \
+            -o work_pool_compare
+
+      - name: Run work-pool comparison
+        if: runner.os != 'Windows'
+        run: |
+          ./work_pool_compare
+
       - name: Build FIR replay
         if: runner.os != 'Windows'
         run: |
