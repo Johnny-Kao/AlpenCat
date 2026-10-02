@@ -2,9 +2,11 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use runtime_core::BackendKind;
+use runtime_broker::{BrokerCapacity, BrokerRequest};
 use runtime_cost_model::{CostModelContext, MachineFingerprint, OnlineCostModel};
 use runtime_execution_planner::{AdaptiveExecutionPlanner, PlannerContext};
 use runtime_machine::{GpuDeviceProfile, HostProfile, MachineProfile};
+use runtime_policy_cache::{ExecutionPolicyCache, PolicyCacheStatus};
 use runtime_rebalancer::{RebalanceAction, RebalanceSession};
 use runtime_selector::CalibrationProfile;
 use runtime_telemetry::{BackendTelemetrySnapshot, RuntimeTelemetrySnapshot};
@@ -202,16 +204,59 @@ fn main() {
     let trigger_elapsed = start.elapsed();
     let trigger_ns = trigger_elapsed.as_nanos() as f64 / TRIGGER_ITERS as f64;
 
+    let policy_cache = ExecutionPolicyCache::default();
+    let cache_capacity = BrokerCapacity::new(8, 1);
+    let cache_request = BrokerRequest {
+        gpu_range_eligible: true,
+    };
+    let seeded = policy_cache
+        .resolve_with(
+            "synthetic-crossover",
+            100_000,
+            empty,
+            cache_capacity,
+            cache_request,
+            || Some(BackendKind::Gpu),
+        )
+        .expect("seed policy cache");
+    assert_eq!(seeded.status, PolicyCacheStatus::Planned);
+
+    const CACHE_HIT_ITERS: usize = 1_000_000;
+    let start = Instant::now();
+    let mut cache_hits = 0usize;
+    for _ in 0..CACHE_HIT_ITERS {
+        let policy = black_box(
+            policy_cache
+                .resolve_with(
+                    black_box("synthetic-crossover"),
+                    black_box(100_000),
+                    empty,
+                    cache_capacity,
+                    cache_request,
+                    || Some(BackendKind::Serial),
+                )
+                .expect("cached policy"),
+        );
+        if policy.status == PolicyCacheStatus::Hit {
+            cache_hits += 1;
+        }
+    }
+    let cache_hit_elapsed = start.elapsed();
+    let policy_cache_hit_ns =
+        cache_hit_elapsed.as_nanos() as f64 / CACHE_HIT_ITERS as f64;
+
     println!();
     println!("## control-plane overhead");
     println!("m12_decision_ns={decision_ns:.2}");
     println!("m13_plan_ns={plan_ns:.2}");
     println!("m14_keep_check_ns={keep_ns:.2}");
     println!("m14_trigger_check_ns={trigger_ns:.2}");
+    println!("m11_5_policy_cache_hit_ns={policy_cache_hit_ns:.2}");
     println!("decision_last={last:?}");
     println!("plan_last_chunk={last_chunk}");
     println!("keep_count={keep_count}");
     println!("trigger_count={trigger_count}");
+    println!("policy_cache_hits={cache_hits}");
 
     assert_eq!(
         model.decide(
@@ -233,4 +278,5 @@ fn main() {
     );
     assert_eq!(keep_count, KEEP_ITERS);
     assert_eq!(trigger_count, TRIGGER_ITERS);
+    assert_eq!(cache_hits, CACHE_HIT_ITERS);
 }
