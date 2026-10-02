@@ -1,0 +1,154 @@
+name: AlpenCat Validation Matrix v1
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "validation/validation-matrix-v1.json"
+      - ".github/workflows/validation-matrix-v1.yml"
+      - "benchmarks/fast-route-e2e/**"
+      - "experiments/c-fast-route/**"
+
+jobs:
+  host-validation:
+    name: host-${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64
+            os: ubuntu-24.04
+            perf: true
+          - id: linux-arm64
+            os: ubuntu-24.04-arm
+            perf: true
+          - id: macos-intel
+            os: macos-15-intel
+            perf: true
+          - id: macos-arm64
+            os: macos-15
+            perf: true
+          - id: windows-x64
+            os: windows-2025
+            perf: false
+          - id: windows-arm64
+            os: windows-11-arm
+            perf: false
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Create result directory
+        shell: bash
+        if: runner.os != 'Windows'
+        run: mkdir -p validation-results
+
+      - name: Create result directory (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force validation-results | Out-Null
+
+      - name: Record Unix host metadata
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          {
+            echo "matrix_id=${{ matrix.id }}"
+            echo "runner_os=${{ runner.os }}"
+            echo "runner_arch=${{ runner.arch }}"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            uname -a
+            sysctl -n machdep.cpu.brand_string 2>/dev/null || true
+            sysctl -n hw.memsize 2>/dev/null || true
+            lscpu 2>/dev/null || true
+            free -b 2>/dev/null || true
+            system_profiler SPHardwareDataType SPDisplaysDataType 2>/dev/null || true
+          } > validation-results/metadata.txt
+
+      - name: Record Windows host metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "matrix_id=${{ matrix.id }}" | Out-File validation-results/metadata.txt
+          "runner_os=${{ runner.os }}" | Out-File validation-results/metadata.txt -Append
+          "runner_arch=${{ runner.arch }}" | Out-File validation-results/metadata.txt -Append
+          "sha=${env:GITHUB_SHA}" | Out-File validation-results/metadata.txt -Append
+          Get-CimInstance Win32_Processor | Format-List Name,NumberOfCores,NumberOfLogicalProcessors | Out-String | Out-File validation-results/metadata.txt -Append
+          Get-CimInstance Win32_ComputerSystem | Format-List TotalPhysicalMemory,Model,Manufacturer | Out-String | Out-File validation-results/metadata.txt -Append
+
+      - name: Core portability tests
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          cargo test --release --manifest-path crates/runtime-cost-model/Cargo.toml             | tee validation-results/core-tests.txt
+
+      - name: Core portability tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo test --release --manifest-path crates/runtime-cost-model/Cargo.toml *>&1 |
+            Tee-Object -FilePath validation-results/core-tests.txt
+
+      - name: FastRoute repeated E2E benchmark
+        if: matrix.perf
+        shell: bash
+        run: |
+          set -euo pipefail
+          for rep in 1 2 3 4 5; do
+            cargo run --release --manifest-path benchmarks/fast-route-e2e/Cargo.toml               > "validation-results/fast-route-${rep}.txt"
+          done
+
+      - name: Upload host result
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-v1-${{ matrix.id }}-${{ github.run_id }}
+          path: validation-results/
+          retention-days: 30
+
+  metal-crossovers:
+    name: metal-crossovers-macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build fixed Metal benchmark suite
+        run: |
+          mkdir -p validation-results
+          clang++ -O3 -std=c++17 -fobjc-arc             experiments/target-scenario/metal_fir_bench.mm             -framework Foundation -framework Metal -o /tmp/fir
+          clang++ -O3 -std=c++17 -fobjc-arc             experiments/target-scenario/metal_fft_bench.mm             -framework Foundation -framework Metal -o /tmp/fft
+          clang++ -O3 -std=c++17 -fobjc-arc             experiments/target-scenario/metal_reduction_bench.mm             -framework Foundation -framework Metal -o /tmp/reduction
+
+      - name: Run fixed warm benchmark suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            uname -a
+            sysctl -n machdep.cpu.brand_string || true
+            sysctl -n hw.memsize || true
+            system_profiler SPHardwareDataType SPDisplaysDataType || true
+          } > validation-results/metadata.txt
+
+          for rep in 1 2 3 4 5; do
+            ALPENCAT_FOCUS=1 /tmp/fir > "validation-results/fir-${rep}.txt"
+            /tmp/fft > "validation-results/fft-${rep}.txt"
+            /tmp/reduction > "validation-results/reduction-${rep}.txt"
+          done
+
+      - name: Upload Metal result
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-v1-metal-${{ github.run_id }}
+          path: validation-results/
+          retention-days: 30
