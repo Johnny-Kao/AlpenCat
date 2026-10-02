@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "campaign": "AlpenCat Validation Matrix v2",
+  "frozen_at": "2026-10-03",
+  "purpose": "Validate cross-machine routing cost and localized-adaptivity hypothesis in one fixed campaign",
+  "no_mid_campaign_retuning": true,
+  "runner_strategy": "one job per hardware class; all tests for that class run inside the same provisioned runner",
+  "host_matrix": [
+    {"id":"linux-x64","runner":"ubuntu-24.04","role":"routing-cost-and-portability"},
+    {"id":"linux-arm64","runner":"ubuntu-24.04-arm","role":"routing-cost-and-portability"},
+    {"id":"macos-intel","runner":"macos-15-intel","role":"routing-cost-and-portability"},
+    {"id":"macos-arm64","runner":"macos-15","role":"routing-cost-portability-and-metal"},
+    {"id":"windows-x64","runner":"windows-2025","role":"portability"},
+    {"id":"windows-arm64","runner":"windows-11-arm","role":"portability"}
+  ],
+  "heterogeneous_kernel_families": ["FIR","FFT","Reduction","Conv2D"],
+  "load_order": [
+    "idle_pre",
+    "mem_bw",
+    "cpu_light",
+    "game_like",
+    "gpu_light",
+    "idle_post"
+  ],
+  "repetitions": {
+    "fast_route_processes": 5,
+    "heterogeneous_processes_per_scenario": 5
+  },
+  "analysis": {
+    "compare": [
+      "idle_static_policy",
+      "localized_boundary_upper_bound",
+      "oracle"
+    ],
+    "localized_boundary_definition": "two measured points bracketing the first idle CPU/GPU crossover per family line",
+    "primary_duration_band_us": [100,1000]
+  },
+  "cold_start": {
+    "record_separately": true,
+    "exclude_from_primary_warm_statistics": true
+  },
+  "local_m5_required": false
+}
