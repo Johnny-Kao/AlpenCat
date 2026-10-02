@@ -28,6 +28,11 @@ typedef struct {
     uint32_t required_gpu_state;
 } ac_fast_policy_t;
 
+typedef struct {
+    uint64_t key;
+    uint8_t route;
+} ac_exact_route_entry_t;
+
 /*
  * L0 threshold route.
  *
@@ -52,6 +57,25 @@ ac_route_t alpencat_fast_route_constant(void);
 ac_route_t alpencat_fast_route_cached(
         const uint8_t* route_by_log2_size,
         size_t work_items);
+
+/*
+ * Exact task+size cache lookup. The table is read-only on the hot path;
+ * a slower control plane may publish/replace entries between epochs.
+ *
+ * table_size must be a power of two.
+ */
+ac_route_t alpencat_fast_route_exact_cached(
+        const ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items);
+
+void alpencat_fast_route_exact_publish(
+        ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items,
+        ac_route_t route);
 
 #ifdef __cplusplus
 }

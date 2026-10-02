@@ -53,6 +53,19 @@ jobs:
         run: |
           ./replay_fir
 
+      - name: Build FIR cache replay
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 \
+            experiments/c-fast-route/alpencat_fast_route.c \
+            experiments/c-fast-route/replay_fir_cache.c \
+            -o replay_fir_cache
+
+      - name: Run FIR cache replay
+        if: runner.os != 'Windows'
+        run: |
+          ./replay_fir_cache
+
   rust-to-c:
     strategy:
       fail-fast: false

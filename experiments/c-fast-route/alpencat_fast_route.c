@@ -73,3 +73,52 @@ alpencat_fast_route_cached(const uint8_t* route_by_log2_size, size_t work_items)
     }
     return (ac_route_t)route_by_log2_size[bucket];
 }
+
+static uint64_t
+exact_route_key(uint32_t task_class, size_t work_items)
+{
+    uint64_t x = ((uint64_t)task_class << 32) ^ (uint64_t)work_items;
+    x ^= x >> 33;
+    x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x *= UINT64_C(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    return x ? x : UINT64_C(1);
+}
+
+AC_NOINLINE ac_route_t
+alpencat_fast_route_exact_cached(
+        const ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items)
+{
+    if (table_size == 0 || (table_size & (table_size - 1)) != 0) {
+        return AC_ROUTE_ADAPTIVE;
+    }
+
+    const uint64_t key = exact_route_key(task_class, work_items);
+    const ac_exact_route_entry_t* entry = &table[key & (table_size - 1)];
+    if (entry->key != key) {
+        return AC_ROUTE_ADAPTIVE;
+    }
+    return (ac_route_t)entry->route;
+}
+
+void
+alpencat_fast_route_exact_publish(
+        ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items,
+        ac_route_t route)
+{
+    if (table_size == 0 || (table_size & (table_size - 1)) != 0) {
+        return;
+    }
+
+    const uint64_t key = exact_route_key(task_class, work_items);
+    ac_exact_route_entry_t* entry = &table[key & (table_size - 1)];
+    entry->route = (uint8_t)route;
+    entry->key = key;
+}
