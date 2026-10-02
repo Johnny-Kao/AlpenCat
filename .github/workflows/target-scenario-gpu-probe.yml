@@ -1,0 +1,32 @@
+name: AlpenCat Target Scenario GPU Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "experiments/target-scenario/**"
+      - ".github/workflows/target-scenario-gpu-probe.yml"
+
+jobs:
+  macos-metal-probe:
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner metadata
+        run: |
+          uname -a
+          sysctl -n machdep.cpu.brand_string || true
+          system_profiler SPHardwareDataType SPDisplaysDataType || true
+          swift --version
+
+      - name: Compile Metal availability probe
+        run: |
+          swiftc experiments/target-scenario/metal_probe.swift -framework Metal -o /tmp/metal_probe
+
+      - name: Probe Metal device
+        run: |
+          /tmp/metal_probe
