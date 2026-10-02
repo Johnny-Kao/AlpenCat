@@ -1,4 +1,6 @@
 use std::hint::black_box;
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use runtime_core::BackendKind;
@@ -244,6 +246,48 @@ fn main() {
     let cache_hit_elapsed = start.elapsed();
     let policy_cache_hit_ns =
         cache_hit_elapsed.as_nanos() as f64 / CACHE_HIT_ITERS as f64;
+
+    let shared_cache = Arc::new(policy_cache);
+    println!();
+    println!("## policy-cache contention");
+    for threads in [1usize, 2, 4, 8] {
+        const ITERS_PER_THREAD: usize = 200_000;
+        let start = Instant::now();
+        let mut workers = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            let cache = Arc::clone(&shared_cache);
+            workers.push(thread::spawn(move || {
+                let mut hits = 0usize;
+                for _ in 0..ITERS_PER_THREAD {
+                    let policy = cache
+                        .resolve_with(
+                            "synthetic-crossover",
+                            100_000,
+                            empty,
+                            cache_capacity,
+                            cache_request,
+                            || Some(BackendKind::Serial),
+                        )
+                        .expect("cached policy");
+                    if policy.status == PolicyCacheStatus::Hit {
+                        hits += 1;
+                    }
+                }
+                hits
+            }));
+        }
+        let mut hits = 0usize;
+        for worker in workers {
+            hits += worker.join().expect("policy-cache worker");
+        }
+        let elapsed = start.elapsed();
+        let total = threads * ITERS_PER_THREAD;
+        let ns_per_hit = elapsed.as_nanos() as f64 / total as f64;
+        println!(
+            "m11_5_policy_cache_shared_threads_{threads}_ns={ns_per_hit:.2}"
+        );
+        assert_eq!(hits, total);
+    }
 
     println!();
     println!("## control-plane overhead");
