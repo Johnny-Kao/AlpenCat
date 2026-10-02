@@ -288,6 +288,139 @@ fn train_m12_work(model: &OnlineCostModel, train: &[Point]) {
     }
 }
 
+
+fn train_m12_from_observations(model: &OnlineCostModel, obs: &[Obs], scenario: &str) {
+    let mut rows: Vec<&Obs> = obs.iter().filter(|r| r.scenario == scenario).collect();
+    rows.sort_by_key(|r| (r.rep, r.taps, r.n));
+    for row in rows {
+        let task = format!("fir-taps-{}", row.taps);
+        model.observe(
+            &task,
+            BackendKind::Cpu,
+            row.n,
+            Duration::from_nanos(row.cpu_ns.round() as u64),
+            true,
+        );
+        model.observe(
+            &task,
+            BackendKind::Gpu,
+            row.n,
+            Duration::from_nanos(row.gpu_ns.round() as u64),
+            true,
+        );
+    }
+}
+
+fn online_selected_feedback(
+    obs: &[Obs],
+    scenario: &str,
+    machine: &MachineProfile,
+) -> (f64, f64, usize, usize) {
+    let model = OnlineCostModel::default();
+    train_m12_from_observations(&model, obs, "idle_pre");
+
+    let mut rows: Vec<&Obs> = obs.iter().filter(|r| r.scenario == scenario).collect();
+    rows.sort_by_key(|r| (r.rep, r.taps, r.n));
+
+    let mut regrets = Vec::new();
+    let mut wrong = 0usize;
+    let mut switches = 0usize;
+    let mut previous: BTreeMap<(usize, usize), BackendKind> = BTreeMap::new();
+
+    for row in rows {
+        let task = format!("fir-taps-{}", row.taps);
+        let route = model.decide(&task, row.n, context(machine)).backend;
+        let point = Point {
+            taps: row.taps,
+            n: row.n,
+            cpu_ns: row.cpu_ns,
+            gpu_ns: row.gpu_ns,
+        };
+        let actual = winner(point);
+        wrong += usize::from(route != actual);
+        regrets.push(regret_pct(point, route));
+
+        let key = (row.taps, row.n);
+        if previous.insert(key, route).is_some_and(|prev| prev != route) {
+            switches += 1;
+        }
+
+        // Realistic one-arm feedback: after the decision, only the selected
+        // backend's observed duration is fed back into M12.
+        let elapsed = match route {
+            BackendKind::Gpu => row.gpu_ns,
+            BackendKind::Cpu | BackendKind::Serial => row.cpu_ns,
+        };
+        model.observe(
+            &task,
+            route,
+            row.n,
+            Duration::from_nanos(elapsed.round() as u64),
+            true,
+        );
+    }
+
+    let mean = regrets.iter().sum::<f64>() / regrets.len().max(1) as f64;
+    let max = regrets.into_iter().fold(0.0f64, |acc, x| acc.max(x));
+    (mean, max, wrong, switches)
+}
+
+fn online_dual_feedback_upper_bound(
+    obs: &[Obs],
+    scenario: &str,
+    machine: &MachineProfile,
+) -> (f64, f64, usize, usize) {
+    let model = OnlineCostModel::default();
+    train_m12_from_observations(&model, obs, "idle_pre");
+
+    let mut rows: Vec<&Obs> = obs.iter().filter(|r| r.scenario == scenario).collect();
+    rows.sort_by_key(|r| (r.rep, r.taps, r.n));
+
+    let mut regrets = Vec::new();
+    let mut wrong = 0usize;
+    let mut switches = 0usize;
+    let mut previous: BTreeMap<(usize, usize), BackendKind> = BTreeMap::new();
+
+    for row in rows {
+        let task = format!("fir-taps-{}", row.taps);
+        let route = model.decide(&task, row.n, context(machine)).backend;
+        let point = Point {
+            taps: row.taps,
+            n: row.n,
+            cpu_ns: row.cpu_ns,
+            gpu_ns: row.gpu_ns,
+        };
+        let actual = winner(point);
+        wrong += usize::from(route != actual);
+        regrets.push(regret_pct(point, route));
+
+        let key = (row.taps, row.n);
+        if previous.insert(key, route).is_some_and(|prev| prev != route) {
+            switches += 1;
+        }
+
+        // Research-only upper bound: observe both paths after each point.
+        model.observe(
+            &task,
+            BackendKind::Cpu,
+            row.n,
+            Duration::from_nanos(row.cpu_ns.round() as u64),
+            true,
+        );
+        model.observe(
+            &task,
+            BackendKind::Gpu,
+            row.n,
+            Duration::from_nanos(row.gpu_ns.round() as u64),
+            true,
+        );
+    }
+
+    let mean = regrets.iter().sum::<f64>() / regrets.len().max(1) as f64;
+    let max = regrets.into_iter().fold(0.0f64, |acc, x| acc.max(x));
+    (mean, max, wrong, switches)
+}
+
 fn main() {
     let dir = env::args().nth(1).expect("usage: route-policy-replay RESULTS_DIR");
     let obs = load(Path::new(&dir));
@@ -382,6 +515,28 @@ fn main() {
                 points.len()
             );
         }
+    }
+
+
+    println!();
+    println!("# Online replay with measured per-call feedback");
+    println!("The selected-feedback row is implementable: only the chosen backend is observed.");
+    println!("The dual-feedback row is a research upper bound because both paths are observed.");
+    println!("| scenario | policy | mean_regret_pct | max_regret_pct | wrong_calls | route_switches | calls |");
+    println!("|---|---|---:|---:|---:|---:|---:|");
+    for scenario in aggregated.keys().filter(|s| s.as_str() != "idle_pre") {
+        let call_count = obs.iter().filter(|r| &r.scenario == scenario).count();
+        let (mean, max, wrong, switches) =
+            online_selected_feedback(&obs, scenario, &machine);
+        println!(
+            "| {scenario} | m12_online_selected_feedback | {mean:.3} | {max:.3} | {wrong} | {switches} | {call_count} |"
+        );
+
+        let (mean, max, wrong, switches) =
+            online_dual_feedback_upper_bound(&obs, scenario, &machine);
+        println!(
+            "| {scenario} | m12_online_dual_feedback_upper_bound | {mean:.3} | {max:.3} | {wrong} | {switches} | {call_count} |"
+        );
     }
 
     println!();
