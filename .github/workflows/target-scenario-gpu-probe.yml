@@ -38,6 +38,7 @@ jobs:
 
       - name: Run real Metal FIR crossover benchmark
         run: |
+          set -o pipefail
           /tmp/metal_fir_bench | tee /tmp/metal_fir_bench.txt
 
       - name: Upload target-scenario evidence
