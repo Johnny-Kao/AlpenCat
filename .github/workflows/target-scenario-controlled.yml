@@ -1,0 +1,123 @@
+name: AlpenCat Controlled Load Validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  controlled-metal:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record runner metadata
+        run: |
+          mkdir -p results
+          {
+            echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            uname -a
+            sysctl -n machdep.cpu.brand_string || true
+            sysctl hw.memsize || true
+            system_profiler SPHardwareDataType SPDisplaysDataType || true
+            vm_stat || true
+            pmset -g therm || true
+          } > results/runner_metadata.txt
+
+      - name: Build Metal benchmark and load generator
+        run: |
+          clang++ -O3 -std=c++17 -fobjc-arc \
+            experiments/target-scenario/metal_fir_bench.mm \
+            -framework Foundation -framework Metal \
+            -o /tmp/metal_fir_bench
+          clang++ -O3 -std=c++17 -fobjc-arc \
+            experiments/target-scenario/load_generator.mm \
+            -framework Foundation -framework Metal \
+            -pthread \
+            -o /tmp/alpencat_load
+
+      - name: Run controlled load matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          snapshot() {
+            local label="$1"
+            {
+              echo "=== ${label} ==="
+              date -u +%Y-%m-%dT%H:%M:%SZ
+              vm_stat || true
+              ps -axo pid,pcpu,rss,command | sort -k2 -nr | head -n 20 || true
+              pmset -g therm || true
+            } >> results/system_snapshots.txt
+          }
+
+          start_load() {
+            local scenario="$1"
+            LOAD_PID=""
+            case "$scenario" in
+              cpu|memory|gpu|mixed)
+                /tmp/alpencat_load "$scenario" \
+                  > "results/load_${scenario}.log" 2>&1 &
+                LOAD_PID=$!
+                ;;
+              network)
+                python3 experiments/target-scenario/network_load.py \
+                  > results/load_network.log 2>&1 &
+                LOAD_PID=$!
+                ;;
+              idle_pre|idle_post)
+                ;;
+              *)
+                echo "unknown scenario=$scenario" >&2
+                exit 2
+                ;;
+            esac
+            if [[ -n "$LOAD_PID" ]]; then
+              sleep 3
+            fi
+          }
+
+          stop_load() {
+            if [[ -n "${LOAD_PID:-}" ]]; then
+              kill "$LOAD_PID" 2>/dev/null || true
+              wait "$LOAD_PID" 2>/dev/null || true
+              LOAD_PID=""
+            fi
+          }
+
+          run_scenario() {
+            local scenario="$1"
+            echo "scenario_start=$scenario"
+            start_load "$scenario"
+            snapshot "${scenario}_before"
+
+            for rep in 1 2 3 4 5; do
+              echo "scenario=$scenario rep=$rep"
+              ALPENCAT_FOCUS=1 /tmp/metal_fir_bench \
+                > "results/${scenario}_${rep}.txt"
+            done
+
+            snapshot "${scenario}_after"
+            stop_load
+            sleep 2
+          }
+
+          trap stop_load EXIT
+
+          for scenario in idle_pre gpu cpu network memory mixed idle_post; do
+            run_scenario "$scenario"
+          done
+
+      - name: Analyze controlled-load results
+        run: |
+          python3 experiments/target-scenario/analyze_results.py \
+            | tee results/summary.md
+
+      - name: Upload raw controlled-load evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-load-metal-${{ github.run_id }}
+          path: results/
+          retention-days: 30
