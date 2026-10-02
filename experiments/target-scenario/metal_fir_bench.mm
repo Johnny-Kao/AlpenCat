@@ -165,7 +165,8 @@ int main() {
         std::vector<float> y_cpu(max_n);
 
         for (size_t i = 0; i < x_count; ++i) {
-            x[i] = static_cast<float>((i % 97) - 48) * 0.001f;
+            const int centered = static_cast<int>(i % 97) - 48;
+            x[i] = static_cast<float>(centered) * 0.001f;
         }
         for (size_t j = 0; j < max_taps; ++j) {
             h[j] = 1.0f / static_cast<float>(j + 1);
