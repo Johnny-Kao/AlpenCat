@@ -39,14 +39,14 @@ kernel void fft_stage(
     constant uint &len [[buffer(3)]],
     uint gid [[thread_position_in_grid]])
 {
-    uint half = len >> 1;
+    uint half_len = len >> 1;
     uint butterflies = n >> 1;
     if (gid >= butterflies) return;
 
-    uint group = gid / half;
-    uint j = gid - group * half;
+    uint group = gid / half_len;
+    uint j = gid - group * half_len;
     uint i0 = group * len + j;
-    uint i1 = i0 + half;
+    uint i1 = i0 + half_len;
 
     float angle = -2.0f * M_PI_F * float(j) / float(len);
     float2 w = float2(cos(angle), sin(angle));
