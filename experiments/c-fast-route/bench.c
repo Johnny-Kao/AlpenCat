@@ -1,3 +1,7 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "alpencat_fast_route.h"
 
 #include <inttypes.h>
