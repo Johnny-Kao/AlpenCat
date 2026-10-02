@@ -2,6 +2,12 @@ name: AlpenCat Controlled Load Validation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "experiments/target-scenario/**"
+      - ".github/workflows/target-scenario-controlled.yml"
 
 jobs:
   controlled-metal:
