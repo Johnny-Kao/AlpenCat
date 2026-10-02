@@ -43,7 +43,7 @@ fn telemetry(
     }
 }
 
-fn machine() -> MachineProfile {
+fn benchmark_machine() -> MachineProfile {
     MachineProfile {
         host: HostProfile {
             os: "benchmark",
@@ -127,7 +127,7 @@ fn backend_to_u8(backend: BackendKind) -> u8 {
 }
 
 fn main() {
-    let machine = machine();
+    let machine = benchmark_machine();
     let model = OnlineCostModel::default();
     train(&model, &machine);
 
@@ -362,7 +362,7 @@ fn main() {
         let bg_completed = Arc::clone(&completed);
         let bg_stop = Arc::clone(&stop);
         let worker = thread::spawn(move || {
-            let bg_machine = machine();
+            let bg_machine = benchmark_machine();
             let bg_model = OnlineCostModel::default();
             train(&bg_model, &bg_machine);
             let bg_empty = telemetry(
