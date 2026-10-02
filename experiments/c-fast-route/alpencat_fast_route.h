@@ -95,6 +95,26 @@ void alpencat_fast_route_exact_publish_probe8(
         size_t work_items,
         ac_route_t route);
 
+/*
+ * Epoch-scoped variants. policy_epoch is part of the exact key so a new
+ * machine/policy generation cannot accidentally reuse a route learned under an
+ * older environment.
+ */
+ac_route_t alpencat_fast_route_epoch_cached_probe8(
+        const ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint64_t policy_epoch,
+        uint32_t task_class,
+        size_t work_items);
+
+void alpencat_fast_route_epoch_publish_probe8(
+        ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint64_t policy_epoch,
+        uint32_t task_class,
+        size_t work_items,
+        ac_route_t route);
+
 #ifdef __cplusplus
 }
 #endif

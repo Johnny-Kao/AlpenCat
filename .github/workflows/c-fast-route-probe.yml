@@ -53,6 +53,19 @@ jobs:
         run: |
           ./replay_cache_capacity
 
+      - name: Build policy-churn probe
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 \
+            experiments/c-fast-route/alpencat_fast_route.c \
+            experiments/c-fast-route/replay_policy_churn.c \
+            -o replay_policy_churn
+
+      - name: Run policy-churn probe
+        if: runner.os != 'Windows'
+        run: |
+          ./replay_policy_churn
+
       - name: Build FIR replay
         if: runner.os != 'Windows'
         run: |
