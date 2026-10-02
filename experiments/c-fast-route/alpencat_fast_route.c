@@ -122,3 +122,63 @@ alpencat_fast_route_exact_publish(
     entry->route = (uint8_t)route;
     entry->key = key;
 }
+
+AC_NOINLINE ac_route_t
+alpencat_fast_route_exact_cached_probe8(
+        const ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items)
+{
+    if (table_size == 0 || (table_size & (table_size - 1)) != 0) {
+        return AC_ROUTE_ADAPTIVE;
+    }
+
+    const uint64_t key = exact_route_key(task_class, work_items);
+    const size_t mask = table_size - 1;
+    const size_t start = (size_t)key & mask;
+    const size_t probes = table_size < 8 ? table_size : 8;
+    for (size_t probe = 0; probe < probes; ++probe) {
+        const ac_exact_route_entry_t* entry = &table[(start + probe) & mask];
+        if (entry->key == key) {
+            return (ac_route_t)entry->route;
+        }
+        if (entry->key == 0) {
+            return AC_ROUTE_ADAPTIVE;
+        }
+    }
+    return AC_ROUTE_ADAPTIVE;
+}
+
+void
+alpencat_fast_route_exact_publish_probe8(
+        ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items,
+        ac_route_t route)
+{
+    if (table_size == 0 || (table_size & (table_size - 1)) != 0) {
+        return;
+    }
+
+    const uint64_t key = exact_route_key(task_class, work_items);
+    const size_t mask = table_size - 1;
+    const size_t start = (size_t)key & mask;
+    const size_t probes = table_size < 8 ? table_size : 8;
+    size_t victim = start;
+
+    for (size_t probe = 0; probe < probes; ++probe) {
+        const size_t slot = (start + probe) & mask;
+        ac_exact_route_entry_t* entry = &table[slot];
+        if (entry->key == key || entry->key == 0) {
+            entry->route = (uint8_t)route;
+            entry->key = key;
+            return;
+        }
+        victim = slot;
+    }
+
+    table[victim].route = (uint8_t)route;
+    table[victim].key = key;
+}

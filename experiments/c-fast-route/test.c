@@ -36,5 +36,15 @@ main(void)
     assert(alpencat_fast_route_cached(table, 1024) == AC_ROUTE_SERIAL);
     assert(alpencat_fast_route_cached(table, 2048) == AC_ROUTE_CPU);
     assert(alpencat_fast_route_cached(table, 262144) == AC_ROUTE_GPU);
+
+    ac_exact_route_entry_t exact[16] = {0};
+    alpencat_fast_route_exact_publish_probe8(
+            exact, 16, 7, 4096, AC_ROUTE_CPU);
+    assert(
+            alpencat_fast_route_exact_cached_probe8(exact, 16, 7, 4096)
+            == AC_ROUTE_CPU);
+    assert(
+            alpencat_fast_route_exact_cached_probe8(exact, 16, 7, 8192)
+            == AC_ROUTE_ADAPTIVE);
     return 0;
 }

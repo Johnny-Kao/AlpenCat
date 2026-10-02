@@ -40,6 +40,19 @@ jobs:
         run: |
           ./fast_route_bench
 
+      - name: Build exact-cache capacity probe
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 \
+            experiments/c-fast-route/alpencat_fast_route.c \
+            experiments/c-fast-route/replay_cache_capacity.c \
+            -o replay_cache_capacity
+
+      - name: Run exact-cache capacity probe
+        if: runner.os != 'Windows'
+        run: |
+          ./replay_cache_capacity
+
       - name: Build FIR replay
         if: runner.os != 'Windows'
         run: |

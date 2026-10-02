@@ -77,6 +77,24 @@ void alpencat_fast_route_exact_publish(
         size_t work_items,
         ac_route_t route);
 
+/*
+ * Bounded open-addressed exact cache. The hot path probes at most eight
+ * consecutive slots. This trades a few extra comparisons for materially
+ * better collision tolerance than the single-slot cache.
+ */
+ac_route_t alpencat_fast_route_exact_cached_probe8(
+        const ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items);
+
+void alpencat_fast_route_exact_publish_probe8(
+        ac_exact_route_entry_t* table,
+        size_t table_size,
+        uint32_t task_class,
+        size_t work_items,
+        ac_route_t route);
+
 #ifdef __cplusplus
 }
 #endif
