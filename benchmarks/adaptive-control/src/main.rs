@@ -1,5 +1,6 @@
 use std::hint::black_box;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -92,6 +93,36 @@ fn train(model: &OnlineCostModel, machine: &MachineProfile) {
             fp,
             runtime_cost_model::CostObservation::execution(n, gpu, true),
         );
+    }
+}
+
+fn control_backend(
+    model: &OnlineCostModel,
+    machine: &MachineProfile,
+    telemetry: RuntimeTelemetrySnapshot,
+    work_items: usize,
+) -> BackendKind {
+    let learned = model.decide(
+        "synthetic-crossover",
+        work_items,
+        context(machine, telemetry),
+    );
+    AdaptiveExecutionPlanner
+        .plan(PlannerContext {
+            work_items,
+            cost: learned,
+            machine,
+            telemetry,
+            gpu_range_eligible: true,
+        })
+        .primary_backend
+}
+
+fn backend_to_u8(backend: BackendKind) -> u8 {
+    match backend {
+        BackendKind::Serial => 0,
+        BackendKind::Cpu => 1,
+        BackendKind::Gpu => 2,
     }
 }
 
@@ -301,6 +332,91 @@ fn main() {
     println!("keep_count={keep_count}");
     println!("trigger_count={trigger_count}");
     println!("policy_cache_hits={cache_hits}");
+
+    println!();
+    println!("## synchronous vs asynchronous control refresh");
+    const CONTROL_ITERS: usize = 2_000_000;
+    for period in [1usize, 16, 64, 256, 1024] {
+        let start = Instant::now();
+        let mut sync_policy = BackendKind::Serial;
+        let mut sync_updates = 0usize;
+        for i in 0..CONTROL_ITERS {
+            if i % period == 0 {
+                let n = 1_000 + (i % 100_000);
+                sync_policy = control_backend(&model, &machine, empty, n);
+                sync_updates += 1;
+            }
+            black_box(sync_policy);
+        }
+        let sync_ns = start.elapsed().as_nanos() as f64 / CONTROL_ITERS as f64;
+
+        let request_seq = Arc::new(AtomicUsize::new(0));
+        let request_work = Arc::new(AtomicUsize::new(1_000));
+        let published = Arc::new(AtomicU8::new(backend_to_u8(BackendKind::Cpu)));
+        let completed = Arc::new(AtomicUsize::new(0));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let bg_request_seq = Arc::clone(&request_seq);
+        let bg_request_work = Arc::clone(&request_work);
+        let bg_published = Arc::clone(&published);
+        let bg_completed = Arc::clone(&completed);
+        let bg_stop = Arc::clone(&stop);
+        let worker = thread::spawn(move || {
+            let bg_machine = machine();
+            let bg_model = OnlineCostModel::default();
+            train(&bg_model, &bg_machine);
+            let bg_empty = telemetry(
+                backend(0, 0, 0, 0, 0),
+                backend(0, 0, 0, 0, 0),
+            );
+            let mut seen = 0usize;
+            while !bg_stop.load(Ordering::Acquire) {
+                let seq = bg_request_seq.load(Ordering::Acquire);
+                if seq == seen {
+                    std::hint::spin_loop();
+                    continue;
+                }
+                let n = bg_request_work.load(Ordering::Relaxed);
+                let next = control_backend(&bg_model, &bg_machine, bg_empty, n);
+                bg_published.store(backend_to_u8(next), Ordering::Release);
+                seen = seq;
+                bg_completed.store(seen, Ordering::Release);
+            }
+        });
+
+        let start = Instant::now();
+        let mut async_requests = 0usize;
+        let mut async_reads = 0u64;
+        for i in 0..CONTROL_ITERS {
+            if i % period == 0 {
+                request_work.store(1_000 + (i % 100_000), Ordering::Relaxed);
+                async_requests += 1;
+                request_seq.store(async_requests, Ordering::Release);
+            }
+            async_reads += published.load(Ordering::Acquire) as u64;
+        }
+        let async_ns = start.elapsed().as_nanos() as f64 / CONTROL_ITERS as f64;
+        let completed_at_loop_end = completed.load(Ordering::Acquire);
+        stop.store(true, Ordering::Release);
+        worker.join().expect("async control worker");
+
+        println!(
+            "control_refresh period={period} sync_ns={sync_ns:.2} "
+        );
+        println!(
+            "control_refresh_async period={period} foreground_ns={async_ns:.2} "
+        );
+        println!(
+            "control_refresh_counts period={period} sync_updates={sync_updates} "
+        );
+        println!(
+            "control_refresh_async_counts period={period} requests={async_requests} "
+        );
+        println!(
+            "control_refresh_async_completed period={period} completed={completed_at_loop_end} "
+        );
+        black_box(async_reads);
+    }
 
     assert_eq!(
         model.decide(
