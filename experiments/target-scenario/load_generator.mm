@@ -40,17 +40,17 @@ static void memory_worker(size_t bytes) {
 static const char *kGpuShader = R"METAL(
 #include <metal_stdlib>
 using namespace metal;
-kernel void burn(device float *x [[buffer(0)]], uint gid [[thread_position_in_grid]]) {
+kernel void burn(device float *x [[buffer(0)]], constant uint &rounds [[buffer(1)]], uint gid [[thread_position_in_grid]]) {
     if (gid >= 262144) return;
     float v = x[gid] + 0.000001f;
-    for (uint i = 0; i < 256; ++i) {
+    for (uint i = 0; i < rounds; ++i) {
         v = fma(v, 1.000001f, 0.000001f);
     }
     x[gid] = v;
 }
 )METAL";
 
-static void gpu_worker() {
+static void gpu_worker(uint32_t rounds, int sleep_us) {
     @autoreleasepool {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (!device) {
@@ -83,6 +83,7 @@ static void gpu_worker() {
                 id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
                 [enc setComputePipelineState:pipe];
                 [enc setBuffer:b offset:0 atIndex:0];
+                [enc setBytes:&rounds length:sizeof(rounds) atIndex:1];
                 NSUInteger width = std::min<NSUInteger>(
                     256, pipe.maxTotalThreadsPerThreadgroup);
                 [enc dispatchThreads:MTLSizeMake(262144, 1, 1)
@@ -90,6 +91,9 @@ static void gpu_worker() {
                 [enc endEncoding];
                 [cb commit];
                 [cb waitUntilCompleted];
+                if (sleep_us > 0) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(sleep_us));
+                }
             }
         }
     }
@@ -97,7 +101,7 @@ static void gpu_worker() {
 
 int main(int argc, char **argv) {
     if (argc != 2) {
-        std::fprintf(stderr, "usage: %s cpu|memory|gpu|mixed\n", argv[0]);
+        std::fprintf(stderr, "usage: %s cpu_light|cpu_heavy|mem_resident|mem_bw|gpu_light|gpu_heavy|app_like|video_like|game_like\n", argv[0]);
         return 2;
     }
 
@@ -107,16 +111,38 @@ int main(int argc, char **argv) {
     const std::string mode = argv[1];
     std::vector<std::thread> threads;
 
-    if (mode == "cpu" || mode == "mixed") {
-        threads.emplace_back(cpu_worker);
-        threads.emplace_back(cpu_worker);
-    }
-    if (mode == "memory" || mode == "mixed") {
+    auto start_cpu = [&](int count) {
+        for (int i = 0; i < count; ++i) threads.emplace_back(cpu_worker);
+    };
+    auto start_mem_bw = [&]() {
         threads.emplace_back(memory_worker, 512ull * 1024ull * 1024ull);
-    }
-    if (mode == "gpu" || mode == "mixed") {
-        threads.emplace_back(gpu_worker);
-    }
+    };
+    auto start_mem_resident = [&]() {
+        threads.emplace_back([] {
+            const size_t bytes = 1024ull * 1024ull * 1024ull;
+            std::vector<unsigned char> buf(bytes, 1);
+            for (size_t i = 0; i < buf.size(); i += 16384) buf[i] ^= 1;
+            while (!g_stop.load(std::memory_order_relaxed)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        });
+    };
+    auto start_gpu_light = [&]() {
+        threads.emplace_back(gpu_worker, 32u, 1000);
+    };
+    auto start_gpu_heavy = [&]() {
+        threads.emplace_back(gpu_worker, 256u, 0);
+    };
+
+    if (mode == "cpu_light") start_cpu(1);
+    else if (mode == "cpu_heavy") start_cpu(2);
+    else if (mode == "mem_resident") start_mem_resident();
+    else if (mode == "mem_bw") start_mem_bw();
+    else if (mode == "gpu_light") start_gpu_light();
+    else if (mode == "gpu_heavy") start_gpu_heavy();
+    else if (mode == "app_like") { start_cpu(1); start_mem_resident(); }
+    else if (mode == "video_like") { start_cpu(1); start_gpu_light(); }
+    else if (mode == "game_like") { start_cpu(2); start_mem_bw(); start_gpu_heavy(); }
 
     if (threads.empty()) {
         std::fprintf(stderr, "unknown mode=%s\n", mode.c_str());
