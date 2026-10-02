@@ -1,7 +1,7 @@
 import socket
 import threading
 import signal
-import sys
+import time
 
 stop = False
 
@@ -27,14 +27,30 @@ def server_thread():
             if not data:
                 break
 
-t = threading.Thread(target=server_thread, daemon=True)
-t.start()
+threading.Thread(target=server_thread, daemon=True).start()
 
 client = socket.create_connection(("127.0.0.1", port))
-payload = b"x" * (1 << 20)
+payload = b"x" * (64 * 1024)
+
+# Bursty, rate-limited loopback traffic. This exercises the network stack while
+# deliberately avoiding a CPU-saturating memcpy loop.
+target_bytes_per_sec = 8 * 1024 * 1024
+burst_seconds = 0.5
+idle_seconds = 0.5
+bytes_per_burst = int(target_bytes_per_sec * burst_seconds)
+
 try:
     while not stop:
-        client.sendall(payload)
+        start = time.perf_counter()
+        sent = 0
+        while sent < bytes_per_burst and not stop:
+            client.sendall(payload)
+            sent += len(payload)
+            expected = sent / target_bytes_per_sec
+            elapsed = time.perf_counter() - start
+            if expected > elapsed:
+                time.sleep(expected - elapsed)
+        time.sleep(idle_seconds)
 finally:
     client.close()
     server.close()
