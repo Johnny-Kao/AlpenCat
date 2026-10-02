@@ -8,6 +8,7 @@ use runtime_policy_cache::ExecutionPolicyCache;
 use runtime_telemetry::{BackendTelemetrySnapshot, RuntimeTelemetrySnapshot};
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct ExactRouteEntry {
     key: u64,
     route: u8,
