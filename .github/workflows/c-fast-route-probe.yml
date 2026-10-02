@@ -66,6 +66,19 @@ jobs:
         run: |
           ./replay_policy_churn
 
+      - name: Build shared-read scaling probe
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 -pthread \
+            experiments/c-fast-route/alpencat_fast_route.c \
+            experiments/c-fast-route/replay_read_scaling.c \
+            -o replay_read_scaling
+
+      - name: Run shared-read scaling probe
+        if: runner.os != 'Windows'
+        run: |
+          ./replay_read_scaling
+
       - name: Build FIR replay
         if: runner.os != 'Windows'
         run: |
