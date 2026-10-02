@@ -57,12 +57,81 @@ typedef struct {
     double claim_ns_per_task;
 } split_result_t;
 
+typedef struct {
+    atomic_size_t* cursor;
+    size_t task_count;
+    worker_kind_t worker_kind;
+    size_t claimed;
+} any_worker_arg_t;
+
 static uint64_t
 now_ns(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * UINT64_C(1000000000) + (uint64_t)ts.tv_nsec;
+}
+
+static void*
+any_worker(void* raw)
+{
+    any_worker_arg_t* arg = raw;
+    const size_t batch = arg->worker_kind == WORKER_GPU ? 32 : 1;
+    size_t claimed = 0;
+    for (;;) {
+        size_t start = atomic_fetch_add_explicit(
+                arg->cursor, batch, memory_order_relaxed);
+        if (start >= arg->task_count) {
+            break;
+        }
+        size_t remaining = arg->task_count - start;
+        claimed += remaining < batch ? remaining : batch;
+    }
+    arg->claimed = claimed;
+    return NULL;
+}
+
+static double
+run_shared_any(
+        size_t task_count,
+        size_t cpu_workers,
+        size_t gpu_workers)
+{
+    const size_t worker_count = cpu_workers + gpu_workers;
+    pthread_t* threads = calloc(worker_count, sizeof(pthread_t));
+    any_worker_arg_t* args = calloc(worker_count, sizeof(any_worker_arg_t));
+    if (!threads || !args) {
+        exit(2);
+    }
+
+    atomic_size_t cursor;
+    atomic_init(&cursor, 0);
+    uint64_t start = now_ns();
+    for (size_t i = 0; i < worker_count; ++i) {
+        args[i] = (any_worker_arg_t){
+            .cursor = &cursor,
+            .task_count = task_count,
+            .worker_kind = i < cpu_workers ? WORKER_CPU : WORKER_GPU,
+            .claimed = 0,
+        };
+        if (pthread_create(&threads[i], NULL, any_worker, &args[i]) != 0) {
+            exit(3);
+        }
+    }
+    size_t claimed = 0;
+    for (size_t i = 0; i < worker_count; ++i) {
+        pthread_join(threads[i], NULL);
+        claimed += args[i].claimed;
+    }
+    uint64_t stop = now_ns();
+    if (claimed != task_count) {
+        fprintf(stderr, "shared-any claim mismatch: %zu != %zu\n", claimed, task_count);
+        exit(4);
+    }
+
+    free(args);
+    free(threads);
+    return (double)(stop - start) / (double)task_count;
 }
 
 static int
@@ -421,6 +490,20 @@ int
 main(void)
 {
     const size_t task_count = 200000;
+
+    /*
+     * Best-case control: every task can run on either backend, so a single
+     * atomic cursor is sufficient and no compatibility filtering is needed.
+     */
+    for (size_t cpu_workers = 1; cpu_workers <= 8; cpu_workers *= 2) {
+        const double any_ns = run_shared_any(task_count, cpu_workers, 1);
+        printf(
+                "pool_any tasks=%zu cpu_workers=%zu gpu_workers=1 "
+                "shared_atomic_ns=%.4f\n",
+                task_count,
+                cpu_workers,
+                any_ns);
+    }
 
     /* CPU-only 20%, GPU-preferred 20%, either 60%. */
     run_case("balanced", task_count, 4, 1, 20, 20);
