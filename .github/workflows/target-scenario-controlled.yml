@@ -63,7 +63,7 @@ jobs:
             local scenario="$1"
             LOAD_PID=""
             case "$scenario" in
-              cpu|memory|gpu|mixed)
+              cpu_light|cpu_heavy|mem_resident|mem_bw|gpu_light|gpu_heavy|app_like|video_like|game_like)
                 /tmp/alpencat_load "$scenario" \
                   > "results/load_${scenario}.log" 2>&1 &
                 LOAD_PID=$!
@@ -112,7 +112,7 @@ jobs:
 
           trap stop_load EXIT
 
-          for scenario in idle_pre gpu cpu network memory mixed idle_post; do
+          for scenario in idle_pre cpu_light network gpu_light mem_resident video_like cpu_heavy mem_bw gpu_heavy app_like game_like idle_post; do
             run_scenario "$scenario"
           done
 
