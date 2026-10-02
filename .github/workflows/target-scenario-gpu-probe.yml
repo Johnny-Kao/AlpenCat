@@ -30,3 +30,19 @@ jobs:
       - name: Probe Metal device
         run: |
           /tmp/metal_probe
+
+
+      - name: Build real Metal FIR crossover benchmark
+        run: |
+          clang++ -O3 -std=c++17 -fobjc-arc             experiments/target-scenario/metal_fir_bench.mm             -framework Foundation -framework Metal             -o /tmp/metal_fir_bench
+
+      - name: Run real Metal FIR crossover benchmark
+        run: |
+          /tmp/metal_fir_bench | tee /tmp/metal_fir_bench.txt
+
+      - name: Upload target-scenario evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: target-scenario-metal-${{ github.run_id }}
+          path: /tmp/metal_fir_bench.txt
+          retention-days: 30
