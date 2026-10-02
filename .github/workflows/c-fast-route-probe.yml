@@ -40,6 +40,16 @@ jobs:
         run: |
           ./fast_route_bench
 
+      - name: Build FIR replay
+        if: runner.os != 'Windows'
+        run: |
+          clang -O3 -std=c11 +            experiments/c-fast-route/alpencat_fast_route.c +            experiments/c-fast-route/replay_fir.c +            -o replay_fir
+
+      - name: Run FIR replay
+        if: runner.os != 'Windows'
+        run: |
+          ./replay_fir
+
   rust-to-c:
     strategy:
       fail-fast: false
