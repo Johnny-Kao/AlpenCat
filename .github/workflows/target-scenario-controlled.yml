@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87.0
+
       - name: Record runner metadata
         run: |
           mkdir -p results
@@ -120,6 +123,13 @@ jobs:
         run: |
           python3 experiments/target-scenario/analyze_results.py \
             | tee results/summary.md
+
+      - name: Replay routing policies
+        run: |
+          cargo run --release \
+            --manifest-path benchmarks/route-policy-replay/Cargo.toml \
+            -- results \
+            | tee results/route_policy_replay.md
 
       - name: Upload raw controlled-load evidence
         uses: actions/upload-artifact@v4
