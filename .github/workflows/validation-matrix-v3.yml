@@ -1,0 +1,334 @@
+name: AlpenCat Validation Campaign v3
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "validation/validation-matrix-v3.json"
+      - "validation/select-deep-v3.py"
+      - ".github/workflows/validation-matrix-v3.yml"
+      - "experiments/target-scenario/**"
+      - "benchmarks/fast-route-e2e/**"
+      - "experiments/c-fast-route/**"
+
+jobs:
+  host:
+    name: host-${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64
+            os: ubuntu-24.04
+            perf: true
+          - id: linux-arm64
+            os: ubuntu-24.04-arm
+            perf: true
+          - id: macos-intel
+            os: macos-15-intel
+            perf: true
+          - id: macos-arm64
+            os: macos-15
+            perf: true
+          - id: windows-x64
+            os: windows-2025
+            perf: false
+          - id: windows-arm64
+            os: windows-11-arm
+            perf: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Unix host snapshot and routing campaign
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p validation-results
+
+          {
+            echo "matrix_id=${{ matrix.id }}"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "timestamp_utc=$(date -u +%FT%TZ)"
+            uname -a
+            uptime || true
+            sysctl -n machdep.cpu.brand_string 2>/dev/null || true
+            sysctl -n hw.logicalcpu 2>/dev/null || true
+            sysctl -n hw.physicalcpu 2>/dev/null || true
+            sysctl -n hw.memsize 2>/dev/null || true
+            lscpu 2>/dev/null || true
+            free -b 2>/dev/null || true
+            vm_stat 2>/dev/null || true
+            memory_pressure -Q 2>/dev/null || true
+            ps -axo pid,ppid,%cpu,%mem,rss,vsz,state,etime,comm | head -n 80 || true
+            system_profiler SPHardwareDataType SPDisplaysDataType 2>/dev/null || true
+          } > validation-results/host-before.txt
+
+          cargo test --release --manifest-path crates/runtime-cost-model/Cargo.toml \
+            | tee validation-results/core-tests.txt
+
+          if [[ "${{ matrix.perf }}" == "true" ]]; then
+            cargo build --release --manifest-path benchmarks/fast-route-e2e/Cargo.toml
+            BIN="benchmarks/fast-route-e2e/target/release/fast-route-e2e"
+            if [[ ! -x "$BIN" ]]; then
+              BIN="target/release/fast-route-e2e"
+            fi
+            for rep in 1 2 3 4 5; do
+              "$BIN" > "validation-results/fast-route-${rep}.txt"
+            done
+          fi
+
+          {
+            echo "timestamp_utc=$(date -u +%FT%TZ)"
+            uptime || true
+            free -b 2>/dev/null || true
+            vm_stat 2>/dev/null || true
+            memory_pressure -Q 2>/dev/null || true
+            ps -axo pid,ppid,%cpu,%mem,rss,vsz,state,etime,comm | head -n 80 || true
+          } > validation-results/host-after.txt
+
+      - name: Windows host snapshot and portability campaign
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force validation-results | Out-Null
+          "matrix_id=${{ matrix.id }}" | Out-File validation-results/host-before.txt
+          "sha=${env:GITHUB_SHA}" | Out-File validation-results/host-before.txt -Append
+          "timestamp=$(Get-Date -Format o)" | Out-File validation-results/host-before.txt -Append
+          Get-CimInstance Win32_Processor |
+            Format-List Name,NumberOfCores,NumberOfLogicalProcessors |
+            Out-String | Out-File validation-results/host-before.txt -Append
+          Get-CimInstance Win32_ComputerSystem |
+            Format-List TotalPhysicalMemory,Model,Manufacturer |
+            Out-String | Out-File validation-results/host-before.txt -Append
+          Get-Process | Sort-Object CPU -Descending | Select-Object -First 50 |
+            Format-Table Id,ProcessName,CPU,WorkingSet64,VirtualMemorySize64 -AutoSize |
+            Out-String | Out-File validation-results/host-before.txt -Append
+
+          cargo test --release --manifest-path crates/runtime-cost-model/Cargo.toml *>&1 |
+            Tee-Object -FilePath validation-results/core-tests.txt
+
+          "timestamp=$(Get-Date -Format o)" | Out-File validation-results/host-after.txt
+          Get-Process | Sort-Object CPU -Descending | Select-Object -First 50 |
+            Format-Table Id,ProcessName,CPU,WorkingSet64,VirtualMemorySize64 -AutoSize |
+            Out-String | Out-File validation-results/host-after.txt -Append
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation-v3-${{ matrix.id }}-${{ github.run_id }}
+          path: validation-results/
+          retention-days: 30
+
+  heterogeneous:
+    name: adaptive-sweep-macos-arm64
+    runs-on: macos-15
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build complete suite once
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p campaign-results/quick campaign-results/deep campaign-results/metrics campaign-results/snapshots
+
+          clang++ -O3 -std=c++17 -fobjc-arc experiments/target-scenario/metal_fir_bench.mm \
+            -framework Foundation -framework Metal -o /tmp/fir
+          clang++ -O3 -std=c++17 -fobjc-arc experiments/target-scenario/metal_fft_bench.mm \
+            -framework Foundation -framework Metal -o /tmp/fft
+          clang++ -O3 -std=c++17 -fobjc-arc experiments/target-scenario/metal_reduction_bench.mm \
+            -framework Foundation -framework Metal -o /tmp/reduction
+          clang++ -O3 -std=c++17 -fobjc-arc experiments/target-scenario/metal_conv2d_bench.mm \
+            -framework Foundation -framework Metal -o /tmp/conv
+          clang++ -O3 -std=c++17 -fobjc-arc experiments/target-scenario/load_generator.mm \
+            -framework Foundation -framework Metal -pthread -o /tmp/loadgen
+
+      - name: Quick sweep, clean process state, then deep significant paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          snapshot() {
+            local label="$1"
+            {
+              echo "label=$label"
+              echo "timestamp_utc=$(date -u +%FT%TZ)"
+              echo "sha=$GITHUB_SHA"
+              echo "run_id=$GITHUB_RUN_ID"
+              uname -a
+              uptime || true
+              echo "--- CPU ---"
+              sysctl -n machdep.cpu.brand_string || true
+              sysctl -n hw.logicalcpu || true
+              sysctl -n hw.physicalcpu || true
+              echo "--- MEMORY ---"
+              sysctl -n hw.memsize || true
+              vm_stat || true
+              memory_pressure -Q || true
+              echo "--- TOP PROCESSES ---"
+              ps -axo pid,ppid,%cpu,%mem,rss,vsz,state,etime,comm |
+                sort -k3 -nr | head -n 60 || true
+            } > "campaign-results/snapshots/${label}.txt"
+          }
+
+          cleanup_campaign_processes() {
+            if [[ -n "${LOAD_PID:-}" ]]; then
+              kill -TERM "$LOAD_PID" 2>/dev/null || true
+              for _ in 1 2 3 4 5 6 7 8 9 10; do
+                kill -0 "$LOAD_PID" 2>/dev/null || break
+                sleep 0.1
+              done
+              kill -KILL "$LOAD_PID" 2>/dev/null || true
+              wait "$LOAD_PID" 2>/dev/null || true
+              LOAD_PID=""
+            fi
+
+            for name in loadgen fir fft reduction conv; do
+              pids="$(pgrep -f "^/tmp/${name}( |$)" || true)"
+              if [[ -n "$pids" ]]; then
+                echo "cleanup leftover ${name}: ${pids}" >> campaign-results/process-cleanup.log
+                while read -r pid; do
+                  [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null || true
+                done <<< "$pids"
+                sleep 0.2
+                pids="$(pgrep -f "^/tmp/${name}( |$)" || true)"
+                while read -r pid; do
+                  [[ -n "$pid" ]] && kill -KILL "$pid" 2>/dev/null || true
+                done <<< "$pids"
+              fi
+            done
+          }
+
+          assert_clean() {
+            local leftovers=""
+            for name in loadgen fir fft reduction conv; do
+              pids="$(pgrep -f "^/tmp/${name}( |$)" || true)"
+              [[ -n "$pids" ]] && leftovers="$leftovers $name:$pids"
+            done
+            if [[ -n "$leftovers" ]]; then
+              echo "campaign process cleanup failed:$leftovers" >&2
+              return 1
+            fi
+          }
+
+          start_load() {
+            local scenario="$1"
+            cleanup_campaign_processes
+            assert_clean
+
+            case "$scenario" in
+              idle_pre|idle_post) ;;
+              mem_bw|cpu_light|game_like|gpu_light)
+                /tmp/loadgen "$scenario" > "campaign-results/load-${scenario}-${PHASE}.txt" 2>&1 &
+                LOAD_PID=$!
+                sleep 1
+                ;;
+              *) echo "unknown scenario=$scenario" >&2; exit 2 ;;
+            esac
+          }
+
+          run_one() {
+            local family="$1"
+            local scenario="$2"
+            local rep="$3"
+            local phase="$4"
+            local outdir="campaign-results/${phase}"
+            local cmd="/tmp/${family}"
+            local outfile="${outdir}/${family}_${scenario}_${rep}.txt"
+            local metric="campaign-results/metrics/${phase}_${family}_${scenario}_${rep}.time"
+
+            if [[ "$family" == "fir" ]]; then
+              /usr/bin/time -l -o "$metric" env ALPENCAT_FOCUS=1 "$cmd" > "$outfile"
+            else
+              /usr/bin/time -l -o "$metric" "$cmd" > "$outfile"
+            fi
+          }
+
+          LOAD_PID=""
+          PHASE="quick"
+          trap 'cleanup_campaign_processes' EXIT INT TERM
+
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "timestamp_utc=$(date -u +%FT%TZ)"
+            system_profiler SPHardwareDataType SPDisplaysDataType || true
+          } > campaign-results/host-metadata.txt
+          snapshot "00_host_initial"
+
+          # Phase 1: one broad pass across every kernel and load profile.
+          for scenario in idle_pre mem_bw cpu_light game_like gpu_light idle_post; do
+            PHASE="quick"
+            snapshot "quick_${scenario}_before"
+            start_load "$scenario"
+            for family in fir fft reduction conv; do
+              run_one "$family" "$scenario" 1 quick
+            done
+            cleanup_campaign_processes
+            assert_clean
+            snapshot "quick_${scenario}_after"
+            sleep 0.5
+          done
+
+          # Select only paths that showed a route flip, >=5% static regret,
+          # a <=20% CPU/GPU gap, or are baseline anchors.
+          python3 validation/select-deep-v3.py |
+            tee campaign-results/deep-plan.md
+
+          # Phase 2: same provisioned runner, deeper repetitions only where the
+          # quick pass found useful signal.
+          for scenario in idle_pre mem_bw cpu_light game_like gpu_light idle_post; do
+            families="$(awk -F '\t' -v s="$scenario" '$1 == s {print $2}' campaign-results/deep-plan.tsv | tr '\n' ' ')"
+            [[ -z "$families" ]] && continue
+
+            PHASE="deep"
+            snapshot "deep_${scenario}_before"
+            start_load "$scenario"
+            for rep in 2 3 4 5 6; do
+              for family in $families; do
+                run_one "$family" "$scenario" "$rep" deep
+              done
+            done
+            cleanup_campaign_processes
+            assert_clean
+            snapshot "deep_${scenario}_after"
+            sleep 0.5
+          done
+
+          snapshot "99_host_final"
+          cleanup_campaign_processes
+          assert_clean
+
+          # Flatten selected data for the existing analysis without moving or
+          # deleting the raw quick/deep evidence.
+          mkdir -p campaign-results-flat
+          cp campaign-results/quick/*.txt campaign-results-flat/
+          cp campaign-results/deep/*.txt campaign-results-flat/ 2>/dev/null || true
+
+      - name: Final analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf campaign-results-analysis
+          mv campaign-results campaign-results-analysis
+          mv campaign-results-flat campaign-results
+          python3 validation/analyze-campaign-v2.py | tee campaign-results/summary.md
+          mv campaign-results/summary.md campaign-results-analysis/summary.md
+          rm -rf campaign-results
+          mv campaign-results-analysis campaign-results
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation-v3-heterogeneous-${{ github.run_id }}
+          path: campaign-results/
+          retention-days: 30
