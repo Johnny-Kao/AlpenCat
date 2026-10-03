@@ -100,15 +100,11 @@ impl LocalizedBoundary {
         }
 
         match self.decide(work_items, true) {
-            LocalizedDecision::Direct(BackendKind::Cpu)
-                if observed_best == BackendKind::Gpu =>
-            {
+            LocalizedDecision::Direct(BackendKind::Cpu) if observed_best == BackendKind::Gpu => {
                 self.cpu_safe_max = work_items.saturating_sub(1);
                 true
             }
-            LocalizedDecision::Direct(BackendKind::Gpu)
-                if observed_best == BackendKind::Cpu =>
-            {
+            LocalizedDecision::Direct(BackendKind::Gpu) if observed_best == BackendKind::Cpu => {
                 self.gpu_safe_min = work_items.saturating_add(1);
                 true
             }
