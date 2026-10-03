@@ -239,8 +239,7 @@ impl RecentUseRate {
             return;
         }
 
-        let weighted = self.ewma_interval_ns as u128
-            * (Self::EWMA_WEIGHT_DENOMINATOR as u128 - 1)
+        let weighted = self.ewma_interval_ns as u128 * (Self::EWMA_WEIGHT_DENOMINATOR as u128 - 1)
             + sample as u128;
         self.ewma_interval_ns =
             (weighted / Self::EWMA_WEIGHT_DENOMINATOR as u128).min(u64::MAX as u128) as u64;
@@ -393,7 +392,6 @@ where
             }
         }
     }
-
 
     Ok(RecalibrationOutcome {
         boundary: LocalizedBoundary::new(buckets[cpu_index], buckets[gpu_index]),
@@ -736,16 +734,15 @@ mod tests {
     #[test]
     fn recalibration_expands_right_when_cpu_region_grows() {
         let buckets = [16, 32, 64, 128, 256];
-        let outcome = recalibrate_localized(
-            LocalizedBoundary::new(32, 64),
-            &buckets,
-            |backend, work| match backend {
-                BackendKind::Cpu => work as u64,
-                BackendKind::Gpu => 192,
-                BackendKind::Serial => unreachable!(),
-            },
-        )
-        .unwrap();
+        let outcome =
+            recalibrate_localized(LocalizedBoundary::new(32, 64), &buckets, |backend, work| {
+                match backend {
+                    BackendKind::Cpu => work as u64,
+                    BackendKind::Gpu => 192,
+                    BackendKind::Serial => unreachable!(),
+                }
+            })
+            .unwrap();
 
         assert_eq!(outcome.boundary, LocalizedBoundary::new(128, 256));
         assert_eq!(outcome.measured_points, 4);
@@ -773,8 +770,7 @@ mod tests {
     fn lazy_recalibration_end_to_end_publishes_new_boundary() {
         let idle = ResourceEpoch::default();
         let busy = ResourceEpoch::new(true, true, false);
-        let mut state =
-            LazyLocalizedState::new(LocalizedBoundary::new(32, 64), idle);
+        let mut state = LazyLocalizedState::new(LocalizedBoundary::new(32, 64), idle);
 
         state.observe_epoch(busy);
 
@@ -787,23 +783,16 @@ mod tests {
         rate.observe(1_000);
         rate.observe(2_000);
 
-        assert!(state.should_recalibrate_at_rate(
-            48,
-            true,
-            rate,
-            economics,
-            10_000
-        ));
+        assert!(state.should_recalibrate_at_rate(48, true, rate, economics, 10_000));
 
         let buckets = [16, 32, 64, 128, 256];
-        let outcome = recalibrate_localized(state.boundary, &buckets, |backend, work| {
-            match backend {
+        let outcome =
+            recalibrate_localized(state.boundary, &buckets, |backend, work| match backend {
                 BackendKind::Cpu => work as u64,
                 BackendKind::Gpu => 192,
                 BackendKind::Serial => unreachable!(),
-            }
-        })
-        .unwrap();
+            })
+            .unwrap();
 
         state.publish(outcome.boundary, busy);
 
