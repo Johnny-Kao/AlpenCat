@@ -67,6 +67,7 @@ fn main() {
 
     for &n in &sizes {
         let slice = &data[..n];
+        let point_start_wall_ns = now_ns();
 
         let serial_check = serial_kernel(slice);
         let parallel_check = parallel_kernel(slice);
@@ -121,11 +122,13 @@ fn main() {
             0.0
         };
 
+        let point_end_wall_ns = now_ns();
         println!(
-            "psi_result phase={} sweep={} wall_ns={} n={} serial_ns={:.3} parallel_ns={:.3} winner={} winner_gain_pct={:.4}",
+            "psi_result phase={} sweep={} start_wall_ns={} end_wall_ns={} n={} serial_ns={:.3} parallel_ns={:.3} winner={} winner_gain_pct={:.4}",
             phase,
             sweep,
-            now_ns(),
+            point_start_wall_ns,
+            point_end_wall_ns,
             n,
             serial_ns,
             parallel_ns,
