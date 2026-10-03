@@ -200,6 +200,208 @@ impl RecalibrationEconomics {
     }
 }
 
+/// Cheap recent-use-rate estimate for amortization decisions.
+///
+/// The caller feeds timestamps for relevant invocations of one workload family.
+/// The interval is smoothed with a fixed 1/8 EWMA update so a single burst does
+/// not immediately dominate the payback estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RecentUseRate {
+    last_call_ns: Option<u64>,
+    ewma_interval_ns: u64,
+}
+
+impl RecentUseRate {
+    pub const EWMA_WEIGHT_DENOMINATOR: u64 = 8;
+
+    pub const fn new() -> Self {
+        Self {
+            last_call_ns: None,
+            ewma_interval_ns: 0,
+        }
+    }
+
+    pub fn observe(&mut self, now_ns: u64) {
+        let Some(last) = self.last_call_ns else {
+            self.last_call_ns = Some(now_ns);
+            return;
+        };
+
+        let sample = now_ns.saturating_sub(last);
+        self.last_call_ns = Some(now_ns);
+
+        if sample == 0 {
+            return;
+        }
+
+        if self.ewma_interval_ns == 0 {
+            self.ewma_interval_ns = sample;
+            return;
+        }
+
+        let weighted = self.ewma_interval_ns as u128
+            * (Self::EWMA_WEIGHT_DENOMINATOR as u128 - 1)
+            + sample as u128;
+        self.ewma_interval_ns =
+            (weighted / Self::EWMA_WEIGHT_DENOMINATOR as u128).min(u64::MAX as u128) as u64;
+    }
+
+    pub const fn interval_ns(self) -> Option<u64> {
+        if self.ewma_interval_ns == 0 {
+            None
+        } else {
+            Some(self.ewma_interval_ns)
+        }
+    }
+
+    pub const fn estimated_payback_ns(self, economics: RecalibrationEconomics) -> Option<u64> {
+        let interval = match self.interval_ns() {
+            Some(interval) => interval,
+            None => return None,
+        };
+        let uses = match economics.break_even_uses() {
+            Some(uses) => uses,
+            None => return None,
+        };
+        Some(interval.saturating_mul(uses))
+    }
+
+    pub const fn pays_back_within_ns(
+        self,
+        economics: RecalibrationEconomics,
+        max_payback_ns: u64,
+    ) -> bool {
+        match self.estimated_payback_ns(economics) {
+            Some(payback_ns) => payback_ns <= max_payback_ns,
+            None => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecalibrationError {
+    InvalidBoundary,
+    MissingCpuBracket,
+    MissingGpuBracket,
+    NoCpuWinnerFound,
+    NoGpuWinnerFound,
+    NonMonotonicWinnerOrder,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecalibrationOutcome {
+    pub boundary: LocalizedBoundary,
+    pub measured_points: usize,
+    pub measurement_cost_ns: u64,
+}
+
+/// Re-find a monotonic CPU->GPU crossover starting from the published bracket.
+///
+/// Only the old bracket is measured first. If it no longer brackets both
+/// winners, the search expands outward one supplied bucket at a time. Each
+/// checked point measures both CPU and GPU exactly once.
+///
+/// This function performs no allocation and makes no assumptions about the
+/// timing source. The caller supplies ordered work-size buckets and a
+/// measurement closure.
+pub fn recalibrate_localized<F>(
+    published: LocalizedBoundary,
+    buckets: &[usize],
+    mut measure_ns: F,
+) -> Result<RecalibrationOutcome, RecalibrationError>
+where
+    F: FnMut(BackendKind, usize) -> u64,
+{
+    if !published.is_valid() {
+        return Err(RecalibrationError::InvalidBoundary);
+    }
+
+    let left = buckets
+        .iter()
+        .rposition(|&work| work <= published.cpu_safe_max)
+        .ok_or(RecalibrationError::MissingCpuBracket)?;
+    let right = buckets
+        .iter()
+        .position(|&work| work >= published.gpu_safe_min)
+        .ok_or(RecalibrationError::MissingGpuBracket)?;
+
+    if left >= right {
+        return Err(RecalibrationError::InvalidBoundary);
+    }
+
+    fn winner<F>(work: usize, measure_ns: &mut F, cost_ns: &mut u64) -> BackendKind
+    where
+        F: FnMut(BackendKind, usize) -> u64,
+    {
+        let cpu = measure_ns(BackendKind::Cpu, work);
+        let gpu = measure_ns(BackendKind::Gpu, work);
+        *cost_ns = cost_ns.saturating_add(cpu).saturating_add(gpu);
+        if cpu <= gpu {
+            BackendKind::Cpu
+        } else {
+            BackendKind::Gpu
+        }
+    }
+
+    let mut cost_ns = 0_u64;
+    let mut measured_points = 2_usize;
+    let mut cpu_index = left;
+    let mut gpu_index = right;
+    let left_winner = winner(buckets[left], &mut measure_ns, &mut cost_ns);
+    let right_winner = winner(buckets[right], &mut measure_ns, &mut cost_ns);
+
+    if left_winner == BackendKind::Gpu && right_winner == BackendKind::Cpu {
+        return Err(RecalibrationError::NonMonotonicWinnerOrder);
+    }
+
+    if left_winner == BackendKind::Cpu && right_winner == BackendKind::Gpu {
+        return Ok(RecalibrationOutcome {
+            boundary: LocalizedBoundary::new(buckets[left], buckets[right]),
+            measured_points,
+            measurement_cost_ns: cost_ns,
+        });
+    }
+
+    if left_winner == BackendKind::Cpu && right_winner == BackendKind::Cpu {
+        let mut index = right;
+        loop {
+            index += 1;
+            if index >= buckets.len() {
+                return Err(RecalibrationError::NoGpuWinnerFound);
+            }
+            measured_points += 1;
+            let observed = winner(buckets[index], &mut measure_ns, &mut cost_ns);
+            if observed == BackendKind::Gpu {
+                cpu_index = index - 1;
+                gpu_index = index;
+                break;
+            }
+        }
+    } else if left_winner == BackendKind::Gpu && right_winner == BackendKind::Gpu {
+        let mut index = left;
+        loop {
+            if index == 0 {
+                return Err(RecalibrationError::NoCpuWinnerFound);
+            }
+            index -= 1;
+            measured_points += 1;
+            let observed = winner(buckets[index], &mut measure_ns, &mut cost_ns);
+            if observed == BackendKind::Cpu {
+                cpu_index = index;
+                gpu_index = index + 1;
+                break;
+            }
+        }
+    }
+
+
+    Ok(RecalibrationOutcome {
+        boundary: LocalizedBoundary::new(buckets[cpu_index], buckets[gpu_index]),
+        measured_points,
+        measurement_cost_ns: cost_ns,
+    })
+}
+
 /// Lazy control-plane state for one localized crossover boundary.
 ///
 /// FastRoute remains unchanged. This state only decides whether an already
@@ -275,6 +477,22 @@ impl LazyLocalizedState {
             && gpu_eligible
             && self.boundary.contains(work_items)
             && economics.pays_back_within(expected_remaining_uses)
+    }
+
+    /// Variant of the economics gate that uses recent invocation frequency
+    /// instead of requiring the caller to predict a raw future use count.
+    pub const fn should_recalibrate_at_rate(
+        self,
+        work_items: usize,
+        gpu_eligible: bool,
+        rate: RecentUseRate,
+        economics: RecalibrationEconomics,
+        max_payback_ns: u64,
+    ) -> bool {
+        self.stale
+            && gpu_eligible
+            && self.boundary.contains(work_items)
+            && rate.pays_back_within_ns(economics, max_payback_ns)
     }
 
     /// Publish a newly calibrated boundary and return to the direct path.
@@ -476,5 +694,120 @@ mod tests {
         assert!(!state.is_stale());
         assert_eq!(state.boundary, LocalizedBoundary::new(65_536, 131_072));
         assert_eq!(state.epoch, busy);
+    }
+
+    #[test]
+    fn recent_use_rate_estimates_payback_time() {
+        let mut rate = RecentUseRate::new();
+        rate.observe(1_000);
+        rate.observe(2_000);
+        rate.observe(3_000);
+
+        let economics = RecalibrationEconomics {
+            estimated_cost_ns: 10_000,
+            estimated_regret_per_use_ns: 1_000,
+        };
+
+        assert_eq!(rate.interval_ns(), Some(1_000));
+        assert_eq!(rate.estimated_payback_ns(economics), Some(10_000));
+        assert!(!rate.pays_back_within_ns(economics, 9_999));
+        assert!(rate.pays_back_within_ns(economics, 10_000));
+    }
+
+    #[test]
+    fn recalibration_keeps_existing_bracket_when_it_still_crosses() {
+        let buckets = [16, 32, 64, 128, 256];
+        let outcome = recalibrate_localized(
+            LocalizedBoundary::new(64, 128),
+            &buckets,
+            |backend, work| match backend {
+                BackendKind::Cpu => work as u64,
+                BackendKind::Gpu => 96,
+                BackendKind::Serial => unreachable!(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.boundary, LocalizedBoundary::new(64, 128));
+        assert_eq!(outcome.measured_points, 2);
+        assert_eq!(outcome.measurement_cost_ns, 384);
+    }
+
+    #[test]
+    fn recalibration_expands_right_when_cpu_region_grows() {
+        let buckets = [16, 32, 64, 128, 256];
+        let outcome = recalibrate_localized(
+            LocalizedBoundary::new(32, 64),
+            &buckets,
+            |backend, work| match backend {
+                BackendKind::Cpu => work as u64,
+                BackendKind::Gpu => 192,
+                BackendKind::Serial => unreachable!(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.boundary, LocalizedBoundary::new(128, 256));
+        assert_eq!(outcome.measured_points, 4);
+    }
+
+    #[test]
+    fn recalibration_expands_left_when_gpu_region_grows() {
+        let buckets = [16, 32, 64, 128, 256];
+        let outcome = recalibrate_localized(
+            LocalizedBoundary::new(128, 256),
+            &buckets,
+            |backend, work| match backend {
+                BackendKind::Cpu => work as u64,
+                BackendKind::Gpu => 48,
+                BackendKind::Serial => unreachable!(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(outcome.boundary, LocalizedBoundary::new(32, 64));
+        assert_eq!(outcome.measured_points, 4);
+    }
+
+    #[test]
+    fn lazy_recalibration_end_to_end_publishes_new_boundary() {
+        let idle = ResourceEpoch::default();
+        let busy = ResourceEpoch::new(true, true, false);
+        let mut state =
+            LazyLocalizedState::new(LocalizedBoundary::new(32, 64), idle);
+
+        state.observe_epoch(busy);
+
+        let economics = RecalibrationEconomics {
+            estimated_cost_ns: 3_000,
+            estimated_regret_per_use_ns: 500,
+        };
+        let mut rate = RecentUseRate::new();
+        rate.observe(0);
+        rate.observe(1_000);
+        rate.observe(2_000);
+
+        assert!(state.should_recalibrate_at_rate(
+            48,
+            true,
+            rate,
+            economics,
+            10_000
+        ));
+
+        let buckets = [16, 32, 64, 128, 256];
+        let outcome = recalibrate_localized(state.boundary, &buckets, |backend, work| {
+            match backend {
+                BackendKind::Cpu => work as u64,
+                BackendKind::Gpu => 192,
+                BackendKind::Serial => unreachable!(),
+            }
+        })
+        .unwrap();
+
+        state.publish(outcome.boundary, busy);
+
+        assert_eq!(state.boundary, LocalizedBoundary::new(128, 256));
+        assert!(!state.is_stale());
     }
 }
