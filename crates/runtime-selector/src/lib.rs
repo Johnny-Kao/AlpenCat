@@ -74,8 +74,7 @@ impl LocalizedBoundary {
     }
 
     pub const fn contains(self, work_items: usize) -> bool {
-        !self.is_valid()
-            || (work_items > self.cpu_safe_max && work_items < self.gpu_safe_min)
+        !self.is_valid() || (work_items > self.cpu_safe_max && work_items < self.gpu_safe_min)
     }
 
     pub const fn decide(self, work_items: usize, gpu_eligible: bool) -> LocalizedDecision {
@@ -400,10 +399,7 @@ mod tests {
     fn resource_epoch_only_marks_stale_on_change() {
         let idle = ResourceEpoch::new(false, false, false);
         let cpu_busy = ResourceEpoch::new(true, false, false);
-        let mut state = LazyLocalizedState::new(
-            LocalizedBoundary::new(32_768, 65_536),
-            idle,
-        );
+        let mut state = LazyLocalizedState::new(LocalizedBoundary::new(32_768, 65_536), idle);
 
         assert!(!state.observe_epoch(idle));
         assert!(!state.is_stale());
@@ -415,10 +411,7 @@ mod tests {
     #[test]
     fn selected_timing_uses_ten_percent_passive_fallback() {
         let idle = ResourceEpoch::default();
-        let mut state = LazyLocalizedState::new(
-            LocalizedBoundary::new(32_768, 65_536),
-            idle,
-        );
+        let mut state = LazyLocalizedState::new(LocalizedBoundary::new(32_768, 65_536), idle);
 
         assert!(!state.observe_selected_timing(1_000, 1_100));
         assert!(!state.is_stale());
