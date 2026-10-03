@@ -150,7 +150,8 @@ jobs:
           run_bench_in_cgroup() {
             local phase="$1"
             local sweep="$2"
-            bash -c '
+            sudo -n bash -c '
+              set -e
               echo $$ > "$1/cgroup.procs"
               exec env ALPENCAT_PSI_PHASE="$2" ALPENCAT_PSI_SWEEP="$3" "$4"
             ' _ "$CGROUP" "$phase" "$sweep" "$BENCH"
