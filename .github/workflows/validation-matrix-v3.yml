@@ -78,10 +78,7 @@ jobs:
 
           if [[ "${{ matrix.perf }}" == "true" ]]; then
             cargo build --release --manifest-path benchmarks/fast-route-e2e/Cargo.toml
-            BIN="benchmarks/fast-route-e2e/target/release/fast-route-e2e"
-            if [[ ! -x "$BIN" ]]; then
-              BIN="target/release/fast-route-e2e"
-            fi
+            BIN="benchmarks/fast-route-e2e/target/release/runtime-fast-route-e2e-benchmark"
             for rep in 1 2 3 4 5; do
               "$BIN" > "validation-results/fast-route-${rep}.txt"
             done
