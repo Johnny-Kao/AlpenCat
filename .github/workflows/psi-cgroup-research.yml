@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
 
           BENCH="$PWD/benchmarks/psi-crossover/target/release/alpencat-psi-crossover"
-          CGROUP="/sys/fs/cgroup/alpencat-psi-\${GITHUB_RUN_ID}"
+          CGROUP="/sys/fs/cgroup/alpencat-psi-${GITHUB_RUN_ID}"
           MON_PIDS=()
           LOAD_PID=""
 
@@ -56,7 +56,7 @@ jobs:
 
           cleanup_all() {
             cleanup_load
-            for pid in "\${MON_PIDS[@]:-}"; do
+            for pid in "${MON_PIDS[@]:-}"; do
               sudo kill -TERM "$pid" 2>/dev/null || true
               wait "$pid" 2>/dev/null || true
             done
@@ -153,13 +153,13 @@ jobs:
 
             for sweep in 1 2 3; do
               run_bench_in_cgroup "$phase" "$sweep" \
-                > "psi-cgroup-results/sweeps/\${phase}-\${sweep}.txt"
+                > "psi-cgroup-results/sweeps/${phase}-${sweep}.txt"
             done
 
             cleanup_load
             phase_end=$(date +%s%N)
             printf '%s %s\n' "$phase_start" "$phase_end" \
-              > "psi-cgroup-results/phases/\${phase}.window"
+              > "psi-cgroup-results/phases/${phase}.window"
             sleep 0.5
           done
 
@@ -178,6 +178,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: psi-cgroup-\${{ github.run_id }}
+          name: psi-cgroup-${{ github.run_id }}
           path: psi-cgroup-results/
           retention-days: 30
