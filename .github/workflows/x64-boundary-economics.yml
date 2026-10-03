@@ -12,7 +12,12 @@ on:
 
 jobs:
   economics:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +32,9 @@ jobs:
             echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "sha=${GITHUB_SHA}"
             echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${{ matrix.os }}"
+            echo "sample=${{ matrix.sample }}"
+            echo "runner_name=${RUNNER_NAME:-unknown}"
             uname -a
             lscpu
             echo "--- /proc/cpuinfo model ---"
@@ -89,6 +97,6 @@ jobs:
       - name: Upload evidence
         uses: actions/upload-artifact@v4
         with:
-          name: x64-boundary-economics-${{ github.run_id }}
+          name: x64-boundary-economics-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
           path: results/x64-economics/
           retention-days: 30
