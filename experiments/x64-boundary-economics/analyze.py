@@ -102,8 +102,75 @@ def bounded_policy(rows, baseline_boundary, max_steps=3, collapse_ratio=1.8):
     local_cost = sum(r["serial_ns"] + r["parallel_ns"] for r in local_rows)
     return recovered_boundary, local_rows, local_cost, mode, ratio
 
+
+
+def economic_gate(rows, baseline_rows, baseline_boundary,
+                  demand_threshold=32, slowdown_threshold=1.50):
+    if math.isinf(baseline_boundary):
+        return {"trigger": False, "reason": "no_baseline_boundary"}
+
+    idx = min(range(len(rows)), key=lambda i: abs(rows[i]["n"] - baseline_boundary))
+    base = baseline_rows[idx]
+    cur = rows[idx]
+
+    baseline_route = "PARALLEL" if base["parallel_ns"] < base["serial_ns"] else "SERIAL"
+    baseline_route_ns = route_time(base, baseline_route)
+    current_route_ns = route_time(cur, baseline_route)
+    slowdown = current_route_ns / max(baseline_route_ns, 1.0)
+
+    # A severe slowdown can trigger immediately from the route that would
+    # already have been executed. Otherwise we wait for repeated near-boundary
+    # demand before paying for any alternate-path measurement.
+    immediate = slowdown >= slowdown_threshold
+    return {
+        "trigger": immediate,
+        "reason": "route_slowdown" if immediate else "demand_threshold",
+        "slowdown_ratio": slowdown,
+        "baseline_route": baseline_route,
+        "demand_threshold": demand_threshold,
+    }
+
+
+def gated_economics(rows, baseline_rows, baseline_boundary,
+                    demand_threshold=32, slowdown_threshold=1.50):
+    gate = economic_gate(rows, baseline_rows, baseline_boundary,
+                         demand_threshold=demand_threshold,
+                         slowdown_threshold=slowdown_threshold)
+
+    static = summary_for(rows, baseline_boundary)
+    bounded_boundary, bounded_rows, bounded_cost, bounded_mode, _ = bounded_policy(
+        rows, baseline_boundary
+    )
+    bounded = summary_for(rows, bounded_boundary)
+
+    # Estimate economics for a stream of near-boundary calls. Immediate severe
+    # slowdown triggers before accumulating demand; otherwise wait N calls.
+    wait_calls = 0 if gate["trigger"] else demand_threshold
+    stale_loss_per_call = static["mean_extra_ns_per_call"]
+    pre_trigger_loss = stale_loss_per_call * wait_calls
+    post_trigger_saved_per_call = max(
+        0.0, static["mean_extra_ns_per_call"] - bounded["mean_extra_ns_per_call"]
+    )
+
+    total_activation_cost = pre_trigger_loss + bounded_cost
+    break_even_after_event = None
+    if post_trigger_saved_per_call > 0:
+        break_even_after_event = wait_calls + bounded_cost / post_trigger_saved_per_call
+
+    return {
+        "gate": gate,
+        "wait_calls": wait_calls,
+        "pre_trigger_stale_loss_ns": pre_trigger_loss,
+        "bounded_mode": bounded_mode,
+        "bounded_cost_ns": bounded_cost,
+        "bounded_summary": bounded,
+        "activation_cost_ns": total_activation_cost,
+        "break_even_calls_after_event": break_even_after_event,
+    }
+
 baseline_boundary = first_parallel(phases["full"])
 results = {"baseline_boundary": None if math.isinf(baseline_boundary) else baseline_boundary, "phases": {}}
+baseline_rows = phases["full"]
 
 for name, rows in phases.items():
     actual_boundary = first_parallel(rows)
@@ -169,6 +236,10 @@ for name, rows in phases.items():
             "saved_ns_per_call_estimate": bounded_saved,
             "break_even_calls": bounded_break_even,
         },
+        "economic_gate": gated_economics(
+            rows, baseline_rows, baseline_boundary,
+            demand_threshold=32, slowdown_threshold=1.50
+        ),
     }
 
 (root / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
@@ -177,12 +248,11 @@ print("# AlpenCat x64 boundary economics")
 print()
 print(f"Baseline full-budget crossover: **{results['baseline_boundary']}**")
 print()
-print("| Phase | Threads | Actual crossover | Static mean regret | Full-search cost | Full-search BE | Bounded mode | Bounded cost | Bounded BE | Bounded mean regret |")
-print("|---|---:|---:|---:|---:|---:|---|---:|---:|---:|")
+print("| Phase | Static mean regret | Route slowdown | Gate | Wait calls | Bounded cost | Event break-even |")
+print("|---|---:|---:|---|---:|---:|---:|")
 for name, d in results["phases"].items():
-    be = "n/a" if d["break_even_calls"] is None else f"{d['break_even_calls']:.2f}"
-    ab = "none" if d["actual_boundary"] is None else str(d["actual_boundary"])
     s = d["static_old_boundary"]
-    b = d["bounded_policy"]
-    bbe = "n/a" if b["break_even_calls"] is None else f"{b['break_even_calls']:.2f}"
-    print(f"| {name} | {d['rayon_threads']} | {ab} | {s['mean_regret_pct']:.3f}% | {d['localized_revalidation_cost_ns']/1e6:.3f} ms | {be} | {b['mode']} | {b['cost_ns']/1e6:.3f} ms | {bbe} | {b['summary']['mean_regret_pct']:.3f}% |")
+    g = d["economic_gate"]
+    gate = g["gate"]
+    be = "n/a" if g["break_even_calls_after_event"] is None else f"{g['break_even_calls_after_event']:.2f}"
+    print(f"| {name} | {s['mean_regret_pct']:.3f}% | {gate['slowdown_ratio']:.3f}x | {gate['reason']} | {g['wait_calls']} | {g['bounded_cost_ns']/1e6:.3f} ms | {be} |")
