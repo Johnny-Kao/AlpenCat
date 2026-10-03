@@ -2,6 +2,13 @@ name: AlpenCat PSI Cgroup Research
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "benchmarks/psi-crossover/**"
+      - "validation/psi-crossover/**"
+      - ".github/workflows/psi-cgroup-research.yml"
 
 jobs:
   psi-cgroup:
