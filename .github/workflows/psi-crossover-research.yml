@@ -1,0 +1,195 @@
+name: AlpenCat PSI Crossover Research
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "benchmarks/psi-crossover/**"
+      - "validation/psi-crossover/**"
+      - ".github/workflows/psi-crossover-research.yml"
+
+jobs:
+  psi-crossover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Install pressure generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq stress-ng
+
+      - name: Build once
+        run: |
+          cargo build --release --manifest-path benchmarks/psi-crossover/Cargo.toml
+          mkdir -p psi-results/sweeps psi-results/phases psi-results/snapshots
+
+      - name: Run PSI event and crossover campaign
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BENCH="benchmarks/psi-crossover/target/release/alpencat-psi-crossover"
+          if [[ ! -x "$BENCH" ]]; then
+            echo "missing benchmark binary: $BENCH" >&2
+            exit 2
+          fi
+
+          MON_PIDS=()
+          LOAD_PID=""
+
+          cleanup_load() {
+            if [[ -n "$LOAD_PID" ]]; then
+              kill -TERM "$LOAD_PID" 2>/dev/null || true
+              for _ in 1 2 3 4 5 6 7 8 9 10; do
+                kill -0 "$LOAD_PID" 2>/dev/null || break
+                sleep 0.1
+              done
+              kill -KILL "$LOAD_PID" 2>/dev/null || true
+              wait "$LOAD_PID" 2>/dev/null || true
+              LOAD_PID=""
+            fi
+            pkill -TERM -x stress-ng 2>/dev/null || true
+            sleep 0.2
+            pkill -KILL -x stress-ng 2>/dev/null || true
+          }
+
+          cleanup_all() {
+            cleanup_load
+            for pid in "${MON_PIDS[@]:-}"; do
+              kill -TERM "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            done
+          }
+          trap cleanup_all EXIT INT TERM
+
+          cp /proc/pressure/cpu psi-results/snapshots/cpu-initial.txt
+          cp /proc/pressure/memory psi-results/snapshots/memory-initial.txt
+          cp /proc/pressure/io psi-results/snapshots/io-initial.txt
+
+          python3 validation/psi-crossover/monitor.py             --resource cpu --threshold-us 100000 --window-us 2000000             --output psi-results/psi-cpu.log &
+          MON_PIDS+=("$!")
+
+          python3 validation/psi-crossover/monitor.py             --resource memory --threshold-us 20000 --window-us 2000000             --output psi-results/psi-memory.log &
+          MON_PIDS+=("$!")
+
+          python3 validation/psi-crossover/monitor.py             --resource io --threshold-us 50000 --window-us 2000000             --output psi-results/psi-io.log &
+          MON_PIDS+=("$!")
+
+          sleep 1
+
+          start_load() {
+            local phase="$1"
+            cleanup_load
+
+            case "$phase" in
+              idle_pre|idle_post)
+                ;;
+              cpu_light)
+                stress-ng --cpu 1 --cpu-method matrixprod --quiet &
+                LOAD_PID=$!
+                ;;
+              cpu_heavy)
+                stress-ng --cpu 0 --cpu-method matrixprod --quiet &
+                LOAD_PID=$!
+                ;;
+              mem_bw)
+                stress-ng --vm 1 --vm-bytes 55% --vm-keep --vm-method write64 --quiet &
+                LOAD_PID=$!
+                ;;
+              cpu_mem)
+                stress-ng --cpu 0 --cpu-method matrixprod                   --vm 1 --vm-bytes 45% --vm-keep --vm-method write64 --quiet &
+                LOAD_PID=$!
+                ;;
+              io_pressure)
+                stress-ng --hdd 1 --hdd-bytes 256M --hdd-opts direct --quiet &
+                LOAD_PID=$!
+                ;;
+              *)
+                echo "unknown phase=$phase" >&2
+                exit 3
+                ;;
+            esac
+
+            if [[ -n "$LOAD_PID" ]]; then
+              sleep 1
+            fi
+          }
+
+          snapshot() {
+            local phase="$1"
+            local point="$2"
+            {
+              echo "phase=$phase point=$point wall_ns=$(date +%s%N)"
+              echo "--- cpu ---"
+              cat /proc/pressure/cpu
+              echo "--- memory ---"
+              cat /proc/pressure/memory
+              echo "--- io ---"
+              cat /proc/pressure/io
+              echo "--- load ---"
+              uptime
+              echo "--- memoryinfo ---"
+              grep -E 'MemTotal|MemAvailable|SwapTotal|SwapFree' /proc/meminfo
+              echo "--- top processes ---"
+              ps -eo pid,ppid,pcpu,pmem,rss,stat,comm --sort=-pcpu | head -n 40
+            } > "psi-results/snapshots/${phase}-${point}.txt"
+          }
+
+          for phase in idle_pre cpu_light cpu_heavy mem_bw cpu_mem io_pressure idle_post; do
+            phase_start=$(date +%s%N)
+            start_load "$phase"
+            snapshot "$phase" active
+
+            for sweep in 1 2 3; do
+              ALPENCAT_PSI_PHASE="$phase"               ALPENCAT_PSI_SWEEP="$sweep"                 "$BENCH" > "psi-results/sweeps/${phase}-${sweep}.txt"
+            done
+
+            snapshot "$phase" after
+            cleanup_load
+            phase_end=$(date +%s%N)
+            printf '%s %s\n' "$phase_start" "$phase_end"               > "psi-results/phases/${phase}.window"
+            sleep 0.5
+          done
+
+          cp /proc/pressure/cpu psi-results/snapshots/cpu-final.txt
+          cp /proc/pressure/memory psi-results/snapshots/memory-final.txt
+          cp /proc/pressure/io psi-results/snapshots/io-final.txt
+
+          cleanup_all
+          trap - EXIT INT TERM
+
+          pgrep -x stress-ng && {
+            echo "stress-ng process leak" >&2
+            exit 4
+          } || true
+
+      - name: Analyze PSI correlation
+        run: |
+          python3 validation/psi-crossover/analyze.py |
+            tee psi-results/summary.md
+
+      - name: Record host
+        run: |
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            uname -a
+            lscpu
+            free -h
+            echo "--- PSI config ---"
+            test -e /proc/pressure/cpu && echo "psi_available=1" || echo "psi_available=0"
+          } > psi-results/host.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: psi-crossover-${{ github.run_id }}
+          path: psi-results/
+          retention-days: 30

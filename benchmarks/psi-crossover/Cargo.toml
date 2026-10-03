@@ -1,0 +1,11 @@
+[package]
+name = "alpencat-psi-crossover"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+publish = false
+
+[dependencies]
+rayon = "1.10"
+
+[workspace]
