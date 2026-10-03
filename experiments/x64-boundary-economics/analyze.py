@@ -57,15 +57,36 @@ for name, rows in phases.items():
     actual_boundary = first_parallel(rows)
     static = summary_for(rows, baseline_boundary)
 
+    # Simulate an actual localized boundary search. Start at the old crossover.
+    # If the old point is now SERIAL, walk upward until PARALLEL is found; if it
+    # is still PARALLEL, walk downward until the nearest SERIAL point is found.
+    # Every inspected point prices one serial + one parallel measurement.
     if math.isinf(baseline_boundary):
-        idxs = [len(rows)-2, len(rows)-1]
+        start = len(rows) - 1
     else:
-        idx = min(range(len(rows)), key=lambda i: abs(rows[i]["n"] - baseline_boundary))
-        idxs = sorted(set(i for i in (idx-1, idx, idx+1) if 0 <= i < len(rows)))
+        start = min(range(len(rows)), key=lambda i: abs(rows[i]["n"] - baseline_boundary))
 
-    local_rows = [rows[i] for i in idxs]
+    tested = []
+    def test(i):
+        if i not in tested:
+            tested.append(i)
+        return rows[i]["parallel_ns"] < rows[i]["serial_ns"]
+
+    start_parallel = test(start)
+    if start_parallel:
+        i = start - 1
+        while i >= 0 and test(i):
+            i -= 1
+        recovered_boundary = rows[i + 1]["n"]
+    else:
+        i = start + 1
+        while i < len(rows) and not test(i):
+            i += 1
+        recovered_boundary = math.inf if i == len(rows) else rows[i]["n"]
+
+    local_rows = [rows[i] for i in tested]
     local_cost = sum(r["serial_ns"] + r["parallel_ns"] for r in local_rows)
-    recovered = summary_for(rows, actual_boundary)
+    recovered = summary_for(rows, recovered_boundary)
     saved = max(0.0, static["mean_extra_ns_per_call"] - recovered["mean_extra_ns_per_call"])
     break_even = None if saved <= 0 else local_cost / saved
 
@@ -73,6 +94,7 @@ for name, rows in phases.items():
         "rayon_threads": rows[0]["rayon_threads"],
         "actual_boundary": None if math.isinf(actual_boundary) else actual_boundary,
         "static_old_boundary": static,
+        "recovered_boundary_value": None if math.isinf(recovered_boundary) else recovered_boundary,
         "recovered_boundary": recovered,
         "localized_revalidation_points": [r["n"] for r in local_rows],
         "localized_revalidation_cost_ns": local_cost,
