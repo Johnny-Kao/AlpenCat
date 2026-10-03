@@ -256,3 +256,25 @@ for name, d in results["phases"].items():
     gate = g["gate"]
     be = "n/a" if g["break_even_calls_after_event"] is None else f"{g['break_even_calls_after_event']:.2f}"
     print(f"| {name} | {s['mean_regret_pct']:.3f}% | {gate['slowdown_ratio']:.3f}x | {gate['reason']} | {g['wait_calls']} | {g['bounded_cost_ns']/1e6:.3f} ms | {be} |")
+
+
+print()
+print("## Demand-threshold sensitivity (slowdown threshold = 1.50x)")
+print()
+print("| Phase | 32 | 128 | 512 | 1024 |")
+print("|---|---:|---:|---:|---:|")
+for name, rows in phases.items():
+    vals = []
+    for threshold in (32, 128, 512, 1024):
+        g = gated_economics(
+            rows, baseline_rows, baseline_boundary,
+            demand_threshold=threshold, slowdown_threshold=1.50
+        )
+        be = g["break_even_calls_after_event"]
+        if g["gate"]["trigger"]:
+            vals.append("immediate")
+        elif be is None:
+            vals.append(f"wait {threshold}")
+        else:
+            vals.append(f"{be:.1f}")
+    print(f"| {name} | " + " | ".join(vals) + " |")
