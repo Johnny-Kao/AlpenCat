@@ -28,6 +28,23 @@ typedef struct {
     uint32_t required_gpu_state;
 } ac_fast_policy_t;
 
+/*
+ * Localized adaptivity policy.
+ *
+ * The hot path is decisive only outside the published uncertainty band:
+ *   work_items <= cpu_safe_max  -> CPU
+ *   work_items >= gpu_safe_min  -> GPU
+ *   otherwise                   -> ADAPTIVE
+ *
+ * The slower control plane may replace this immutable snapshot after
+ * recalibration. Keeping mutation out of the hot path avoids locks,
+ * allocation, syscalls, and model recomputation on ordinary calls.
+ */
+typedef struct {
+    size_t cpu_safe_max;
+    size_t gpu_safe_min;
+} ac_localized_policy_t;
+
 typedef struct {
     uint64_t key;
     uint8_t route;
@@ -42,6 +59,19 @@ typedef struct {
  */
 ac_route_t alpencat_fast_route(
         const ac_fast_policy_t* policy,
+        size_t work_items,
+        uint32_t state);
+
+/*
+ * Localized boundary route.
+ *
+ * If both CPU and GPU are available, calls inside the uncertainty band escape
+ * to the slower adaptive control plane. If only one backend is available, the
+ * only eligible backend is returned directly. Invalid/overlapping boundaries
+ * fail closed to AC_ROUTE_ADAPTIVE when both backends are available.
+ */
+ac_route_t alpencat_fast_route_localized(
+        const ac_localized_policy_t* policy,
         size_t work_items,
         uint32_t state);
 

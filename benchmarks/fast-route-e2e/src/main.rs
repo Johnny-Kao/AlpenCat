@@ -15,7 +15,20 @@ struct ExactRouteEntry {
     _padding: [u8; 7],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct LocalizedPolicy {
+    cpu_safe_max: usize,
+    gpu_safe_min: usize,
+}
+
 unsafe extern "C" {
+    fn alpencat_fast_route_localized(
+        policy: *const LocalizedPolicy,
+        work_items: usize,
+        state: c_uint,
+    ) -> c_int;
+
     fn alpencat_fast_route_exact_cached_probe8(
         table: *const ExactRouteEntry,
         table_size: usize,
@@ -180,11 +193,42 @@ fn bench_c_fast_route(n: usize, iters: usize, x: &[f32], y: &mut [f32]) -> f64 {
     start.elapsed().as_nanos() as f64 / iters as f64
 }
 
+fn bench_c_localized(n: usize, iters: usize, x: &[f32], y: &mut [f32]) -> f64 {
+    const AC_CAP_CPU: c_uint = 1 << 0;
+    const AC_CAP_GPU: c_uint = 1 << 1;
+    let policy = LocalizedPolicy {
+        cpu_safe_max: 512,
+        gpu_safe_min: 2048,
+    };
+
+    let start = Instant::now();
+    for _ in 0..iters {
+        let route = unsafe {
+            alpencat_fast_route_localized(
+                black_box(&policy),
+                black_box(n),
+                black_box(AC_CAP_CPU | AC_CAP_GPU),
+            )
+        };
+        black_box(route);
+
+        unsafe {
+            alpencat_axpy_f32(
+                black_box(n),
+                black_box(1.000_001),
+                black_box(x.as_ptr()),
+                black_box(y.as_mut_ptr()),
+            );
+        }
+    }
+    start.elapsed().as_nanos() as f64 / iters as f64
+}
+
 fn main() {
     println!("# FastRoute end-to-end native-kernel benchmark");
     println!("trials=5");
-    println!("| n | iters | kernel_p50_ns | rust_cache_p50_ns | c_fast_p50_ns | c_vs_rust_speedup | c_total_gain |");
-    println!("|---:|---:|---:|---:|---:|---:|---:|");
+    println!("| n | iters | kernel_p50_ns | rust_cache_p50_ns | c_fast_p50_ns | c_localized_p50_ns | c_vs_rust_speedup | localized_vs_rust_speedup |");
+    println!("|---:|---:|---:|---:|---:|---:|---:|---:|");
 
     let mut checksum = 0.0f32;
 
@@ -194,9 +238,11 @@ fn main() {
         let mut kernel_samples = Vec::with_capacity(5);
         let mut rust_samples = Vec::with_capacity(5);
         let mut c_samples = Vec::with_capacity(5);
+        let mut localized_samples = Vec::with_capacity(5);
         let mut y_kernel = vec![1.0f32; n];
         let mut y_rust = vec![1.0f32; n];
         let mut y_c = vec![1.0f32; n];
+        let mut y_localized = vec![1.0f32; n];
 
         for trial in 0..5 {
             match trial % 3 {
@@ -204,14 +250,17 @@ fn main() {
                     kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
                     rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
                     c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
+                    localized_samples.push(bench_c_localized(n, iters, &x, &mut y_localized));
                 }
                 1 => {
+                    localized_samples.push(bench_c_localized(n, iters, &x, &mut y_localized));
                     c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
                     kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
                     rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
                 }
                 _ => {
                     rust_samples.push(bench_rust_cache(n, iters, &x, &mut y_rust));
+                    localized_samples.push(bench_c_localized(n, iters, &x, &mut y_localized));
                     c_samples.push(bench_c_fast_route(n, iters, &x, &mut y_c));
                     kernel_samples.push(bench_kernel_only(n, iters, &x, &mut y_kernel));
                 }
@@ -221,17 +270,18 @@ fn main() {
         let kernel_ns = median(&mut kernel_samples);
         let rust_ns = median(&mut rust_samples);
         let c_ns = median(&mut c_samples);
+        let localized_ns = median(&mut localized_samples);
 
         let speedup = rust_ns / c_ns;
-        let total_gain = 100.0 * (rust_ns - c_ns) / rust_ns;
+        let localized_speedup = rust_ns / localized_ns;
 
-        checksum += y_kernel[0] + y_rust[0] + y_c[0];
+        checksum += y_kernel[0] + y_rust[0] + y_c[0] + y_localized[0];
 
         println!(
-            "| {n} | {iters} | {kernel_ns:.2} | {rust_ns:.2} | {c_ns:.2} | {speedup:.3}x | {total_gain:.2}% |"
+            "| {n} | {iters} | {kernel_ns:.2} | {rust_ns:.2} | {c_ns:.2} | {localized_ns:.2} | {speedup:.3}x | {localized_speedup:.3}x |"
         );
         println!(
-            "e2e_p50 n={n} iters={iters} kernel_ns={kernel_ns:.4} rust_cache_ns={rust_ns:.4} c_fast_ns={c_ns:.4} speedup={speedup:.6} gain_pct={total_gain:.4}"
+            "e2e_p50 n={n} iters={iters} kernel_ns={kernel_ns:.4} rust_cache_ns={rust_ns:.4} c_fast_ns={c_ns:.4} c_localized_ns={localized_ns:.4} speedup={speedup:.6} localized_speedup={localized_speedup:.6}"
         );
     }
 

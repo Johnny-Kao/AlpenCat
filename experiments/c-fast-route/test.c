@@ -25,6 +25,51 @@ main(void)
             == AC_ROUTE_SERIAL);
     assert(alpencat_fast_route(&policy, 4096, 0) == AC_ROUTE_ADAPTIVE);
 
+    ac_localized_policy_t localized = {
+        .cpu_safe_max = 32768,
+        .gpu_safe_min = 65536,
+    };
+
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 16384, AC_CAP_CPU | AC_CAP_GPU)
+            == AC_ROUTE_CPU);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 32768, AC_CAP_CPU | AC_CAP_GPU)
+            == AC_ROUTE_CPU);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 49152, AC_CAP_CPU | AC_CAP_GPU)
+            == AC_ROUTE_ADAPTIVE);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 65536, AC_CAP_CPU | AC_CAP_GPU)
+            == AC_ROUTE_GPU);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 131072, AC_CAP_CPU)
+            == AC_ROUTE_CPU);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized, 1024, AC_CAP_GPU)
+            == AC_ROUTE_GPU);
+    assert(
+            alpencat_fast_route_localized(
+                    &localized,
+                    131072,
+                    AC_CAP_CPU | AC_CAP_GPU | AC_STATE_NESTED_PARALLEL)
+            == AC_ROUTE_SERIAL);
+
+    ac_localized_policy_t invalid_localized = {
+        .cpu_safe_max = 65536,
+        .gpu_safe_min = 32768,
+    };
+    assert(
+            alpencat_fast_route_localized(
+                    &invalid_localized, 49152, AC_CAP_CPU | AC_CAP_GPU)
+            == AC_ROUTE_ADAPTIVE);
+
     uint8_t table[sizeof(size_t) * 8u];
     for (size_t i = 0; i < sizeof(table); ++i) {
         table[i] = AC_ROUTE_ADAPTIVE;

@@ -58,6 +58,43 @@ alpencat_fast_route(
     return AC_ROUTE_ADAPTIVE;
 }
 
+
+AC_NOINLINE ac_route_t
+alpencat_fast_route_localized(
+        const ac_localized_policy_t* policy,
+        size_t work_items,
+        uint32_t state)
+{
+    if (state & AC_STATE_NESTED_PARALLEL) {
+        return AC_ROUTE_SERIAL;
+    }
+
+    const int cpu_available = (state & AC_CAP_CPU) != 0;
+    const int gpu_available = (state & AC_CAP_GPU) != 0;
+
+    if (!cpu_available && !gpu_available) {
+        return AC_ROUTE_ADAPTIVE;
+    }
+    if (cpu_available && !gpu_available) {
+        return AC_ROUTE_CPU;
+    }
+    if (!cpu_available && gpu_available) {
+        return AC_ROUTE_GPU;
+    }
+
+    if (policy == NULL || policy->cpu_safe_max >= policy->gpu_safe_min) {
+        return AC_ROUTE_ADAPTIVE;
+    }
+
+    if (work_items <= policy->cpu_safe_max) {
+        return AC_ROUTE_CPU;
+    }
+    if (work_items >= policy->gpu_safe_min) {
+        return AC_ROUTE_GPU;
+    }
+    return AC_ROUTE_ADAPTIVE;
+}
+
 AC_NOINLINE ac_route_t
 alpencat_fast_route_constant(void)
 {

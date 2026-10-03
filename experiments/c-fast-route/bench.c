@@ -77,6 +77,41 @@ bench_threshold_mixed(
 }
 
 static double
+bench_localized_fixed(const ac_localized_policy_t* policy, size_t iterations)
+{
+    uint64_t sum = 0;
+    uint64_t start = now_ns();
+    for (size_t i = 0; i < iterations; ++i) {
+        sum += (uint64_t)alpencat_fast_route_localized(
+                policy, 65536, AC_CAP_CPU | AC_CAP_GPU);
+    }
+    uint64_t stop = now_ns();
+    sink += sum;
+    return (double)(stop - start) / (double)iterations;
+}
+
+static double
+bench_localized_mixed(
+        const ac_localized_policy_t* policy,
+        const size_t* sizes,
+        const uint32_t* states,
+        size_t input_count,
+        size_t rounds)
+{
+    uint64_t sum = 0;
+    uint64_t start = now_ns();
+    for (size_t round = 0; round < rounds; ++round) {
+        for (size_t i = 0; i < input_count; ++i) {
+            sum += (uint64_t)alpencat_fast_route_localized(
+                    policy, sizes[i], states[i]);
+        }
+    }
+    uint64_t stop = now_ns();
+    sink += sum;
+    return (double)(stop - start) / (double)(input_count * rounds);
+}
+
+static double
 bench_cached_mixed(
         const uint8_t* table,
         const size_t* sizes,
@@ -130,6 +165,11 @@ main(void)
         .required_gpu_state = 0,
     };
 
+    ac_localized_policy_t localized = {
+        .cpu_safe_max = 32768,
+        .gpu_safe_min = 131072,
+    };
+
     uint8_t table[sizeof(size_t) * 8u];
     for (size_t bucket = 0; bucket < sizeof(table); ++bucket) {
         if (bucket <= 10) {
@@ -146,8 +186,14 @@ main(void)
     printf("c_constant_call_ns=%.4f\n", bench_constant(iterations));
     printf("c_threshold_fixed_ns=%.4f\n", bench_threshold_fixed(&policy, iterations));
     printf(
+            "c_localized_fixed_ns=%.4f\n",
+            bench_localized_fixed(&localized, iterations));
+    printf(
             "c_threshold_mixed_ns=%.4f\n",
             bench_threshold_mixed(&policy, sizes, states, INPUT_COUNT, rounds));
+    printf(
+            "c_localized_mixed_ns=%.4f\n",
+            bench_localized_mixed(&localized, sizes, states, INPUT_COUNT, rounds));
     printf(
             "c_cached_bucket_mixed_ns=%.4f\n",
             bench_cached_mixed(table, sizes, INPUT_COUNT, rounds));
