@@ -176,6 +176,11 @@ jobs:
               echo "--- TOP PROCESSES ---"
               ps -axo pid,ppid,%cpu,%mem,rss,vsz,state,etime,comm |
                 sort -k3 -nr | head -n 60 || true
+              echo "--- LOAD ---"
+              sysctl -n vm.loadavg 2>/dev/null || true
+              top -l 1 -n 0 2>/dev/null | head -n 25 || true
+              echo "--- ACCELERATOR ---"
+              ioreg -r -c IOAccelerator -l 2>/dev/null | head -n 160 || true
             } > "campaign-results/snapshots/${label}.txt"
           }
 
@@ -269,6 +274,7 @@ jobs:
             PHASE="quick"
             snapshot "quick_${scenario}_before"
             start_load "$scenario"
+            snapshot "quick_${scenario}_active"
             for family in fir fft reduction conv; do
               run_one "$family" "$scenario" 1 quick
             done
@@ -292,6 +298,7 @@ jobs:
             PHASE="deep"
             snapshot "deep_${scenario}_before"
             start_load "$scenario"
+            snapshot "deep_${scenario}_active"
             for rep in 2 3 4 5 6; do
               for family in $families; do
                 run_one "$family" "$scenario" "$rep" deep
