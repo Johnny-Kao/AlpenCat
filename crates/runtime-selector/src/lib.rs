@@ -799,4 +799,36 @@ mod tests {
         assert_eq!(state.boundary, LocalizedBoundary::new(128, 256));
         assert!(!state.is_stale());
     }
+
+    #[test]
+    fn repeated_epoch_transitions_do_not_leave_state_stuck_stale_after_publish() {
+        let idle = ResourceEpoch::new(false, false, false);
+        let mem = ResourceEpoch::new(false, true, false);
+        let gpu = ResourceEpoch::new(false, false, true);
+        let game = ResourceEpoch::new(true, true, true);
+        let mut state = LazyLocalizedState::new(LocalizedBoundary::new(32, 64), idle);
+
+        for epoch in [mem, idle, game, idle, gpu, idle] {
+            assert!(state.observe_epoch(epoch));
+            assert!(state.is_stale());
+            state.publish(state.boundary, epoch);
+            assert!(!state.is_stale());
+            assert_eq!(state.epoch, epoch);
+        }
+    }
+
+    #[test]
+    fn same_epoch_does_not_retrigger_after_publish() {
+        let idle = ResourceEpoch::default();
+        let busy = ResourceEpoch::new(true, false, true);
+        let mut state = LazyLocalizedState::new(LocalizedBoundary::new(32, 64), idle);
+
+        assert!(state.observe_epoch(busy));
+        state.publish(LocalizedBoundary::new(64, 128), busy);
+
+        for _ in 0..100 {
+            assert!(!state.observe_epoch(busy));
+            assert!(!state.is_stale());
+        }
+    }
 }

@@ -11,7 +11,10 @@ use runtime_execution_planner::{AdaptiveExecutionPlanner, PlannerContext};
 use runtime_machine::{GpuDeviceProfile, HostProfile, MachineProfile};
 use runtime_policy_cache::{ExecutionPolicyCache, PolicyCacheStatus};
 use runtime_rebalancer::{RebalanceAction, RebalanceSession};
-use runtime_selector::CalibrationProfile;
+use runtime_selector::{
+    CalibrationProfile, LazyLocalizedState, LocalizedBoundary, RecalibrationEconomics,
+    RecentUseRate, ResourceEpoch,
+};
 use runtime_telemetry::{BackendTelemetrySnapshot, RuntimeTelemetrySnapshot};
 
 fn backend(
@@ -130,6 +133,73 @@ fn main() {
     let machine = benchmark_machine();
     let model = OnlineCostModel::default();
     train(&model, &machine);
+
+    println!("# lazy-localized controller microbench");
+    const LOCALIZED_ITERS: usize = 5_000_000;
+
+    let boundary = LocalizedBoundary::new(32_768, 65_536);
+    let idle_epoch = ResourceEpoch::new(false, false, false);
+    let busy_epoch = ResourceEpoch::new(true, true, false);
+    let economics = RecalibrationEconomics {
+        estimated_cost_ns: 20_000,
+        estimated_regret_per_use_ns: 1_000,
+    };
+
+    let start = Instant::now();
+    let mut epoch_state = LazyLocalizedState::new(boundary, idle_epoch);
+    let mut epoch_hits = 0usize;
+    for _ in 0..LOCALIZED_ITERS {
+        if black_box(epoch_state.observe_epoch(black_box(idle_epoch))) {
+            epoch_hits += 1;
+        }
+    }
+    let observe_epoch_same_ns = start.elapsed().as_nanos() as f64 / LOCALIZED_ITERS as f64;
+
+    let start = Instant::now();
+    let mut timing_state = LazyLocalizedState::new(boundary, idle_epoch);
+    let mut timing_hits = 0usize;
+    for i in 0..LOCALIZED_ITERS {
+        let observed = if i & 1 == 0 { 1_050 } else { 1_080 };
+        if black_box(timing_state.observe_selected_timing(1_000, black_box(observed))) {
+            timing_hits += 1;
+        }
+    }
+    let selected_timing_ns = start.elapsed().as_nanos() as f64 / LOCALIZED_ITERS as f64;
+
+    let mut rate = RecentUseRate::new();
+    rate.observe(0);
+    rate.observe(1_000);
+    rate.observe(2_000);
+    let mut gate_state = LazyLocalizedState::new(boundary, idle_epoch);
+    assert!(gate_state.observe_epoch(busy_epoch));
+
+    let start = Instant::now();
+    let mut gate_true = 0usize;
+    for _ in 0..LOCALIZED_ITERS {
+        if black_box(gate_state.should_recalibrate_at_rate(
+            black_box(49_152),
+            true,
+            rate,
+            economics,
+            100_000,
+        )) {
+            gate_true += 1;
+        }
+    }
+    let economics_gate_ns = start.elapsed().as_nanos() as f64 / LOCALIZED_ITERS as f64;
+
+    let start = Instant::now();
+    let mut rate_bench = RecentUseRate::new();
+    for i in 0..LOCALIZED_ITERS {
+        rate_bench.observe(black_box((i as u64 + 1) * 1_000));
+    }
+    let recent_use_update_ns = start.elapsed().as_nanos() as f64 / LOCALIZED_ITERS as f64;
+
+    println!("lazy_observe_epoch_same_ns={observe_epoch_same_ns:.4}");
+    println!("lazy_selected_timing_ns={selected_timing_ns:.4}");
+    println!("lazy_economics_gate_ns={economics_gate_ns:.4}");
+    println!("lazy_recent_use_update_ns={recent_use_update_ns:.4}");
+    black_box((epoch_hits, timing_hits, gate_true, rate_bench));
 
     let empty = telemetry(
         backend(0, 0, 0, 0, 0),
