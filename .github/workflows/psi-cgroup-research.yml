@@ -85,14 +85,23 @@ jobs:
 
           for resource in cpu memory io; do
             case "$resource" in
-              cpu) threshold=100000 ;;
-              memory) threshold=20000 ;;
-              io) threshold=50000 ;;
+              cpu)
+                system_threshold=100000
+                cgroup_threshold=10000
+                ;;
+              memory)
+                system_threshold=20000
+                cgroup_threshold=5000
+                ;;
+              io)
+                system_threshold=50000
+                cgroup_threshold=10000
+                ;;
             esac
 
             sudo -n python3 validation/psi-crossover/monitor.py \
               --resource "$resource" \
-              --threshold-us "$threshold" \
+              --threshold-us "$system_threshold" \
               --window-us 2000000 \
               --output "psi-cgroup-results/system-$resource.log" &
             MON_PIDS+=("$!")
@@ -100,7 +109,7 @@ jobs:
             sudo -n python3 validation/psi-crossover/monitor.py \
               --resource "$resource" \
               --path "$CGROUP/$resource.pressure" \
-              --threshold-us "$threshold" \
+              --threshold-us "$cgroup_threshold" \
               --window-us 2000000 \
               --output "psi-cgroup-results/cgroup-$resource.log" &
             MON_PIDS+=("$!")
@@ -151,7 +160,9 @@ jobs:
             phase_start=$(date +%s%N)
             start_load "$phase"
 
-            for sweep in 1 2 3; do
+            # Keep the routed workload active long enough for the normal
+            # 2-second PSI trigger window to observe application-local stalls.
+            for sweep in 1 2 3 4 5 6 7 8 9 10; do
               run_bench_in_cgroup "$phase" "$sweep" \
                 > "psi-cgroup-results/sweeps/${phase}-${sweep}.txt"
             done
