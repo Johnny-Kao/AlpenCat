@@ -6,12 +6,17 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--resource", choices=["cpu", "memory", "io"], required=True)
+parser.add_argument(
+    "--path",
+    default=None,
+    help="Override the PSI file path (for example a cgroup cpu.pressure file).",
+)
 parser.add_argument("--threshold-us", type=int, required=True)
 parser.add_argument("--window-us", type=int, default=2_000_000)
 parser.add_argument("--output", required=True)
 args = parser.parse_args()
 
-path = f"/proc/pressure/{args.resource}"
+path = args.path or f"/proc/pressure/{args.resource}"
 trigger = f"some {args.threshold_us} {args.window_us}\0".encode()
 
 with open(args.output, "w", buffering=1) as out:

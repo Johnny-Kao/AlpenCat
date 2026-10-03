@@ -1,0 +1,176 @@
+name: AlpenCat PSI Cgroup Research
+
+on:
+  workflow_dispatch:
+
+jobs:
+  psi-cgroup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87.0
+
+      - name: Install pressure generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq stress-ng
+
+      - name: Build once
+        run: |
+          cargo build --release --manifest-path benchmarks/psi-crossover/Cargo.toml
+          mkdir -p psi-cgroup-results/sweeps psi-cgroup-results/phases psi-cgroup-results/snapshots
+
+      - name: Run system vs cgroup PSI campaign
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BENCH="$PWD/benchmarks/psi-crossover/target/release/alpencat-psi-crossover"
+          CGROUP="/sys/fs/cgroup/alpencat-psi-\${GITHUB_RUN_ID}"
+          MON_PIDS=()
+          LOAD_PID=""
+
+          cleanup_load() {
+            if [[ -n "$LOAD_PID" ]]; then
+              kill -TERM "$LOAD_PID" 2>/dev/null || true
+              sleep 0.2
+              kill -KILL "$LOAD_PID" 2>/dev/null || true
+              wait "$LOAD_PID" 2>/dev/null || true
+              LOAD_PID=""
+            fi
+            pkill -TERM -x stress-ng 2>/dev/null || true
+            sleep 0.2
+            pkill -KILL -x stress-ng 2>/dev/null || true
+          }
+
+          cleanup_all() {
+            cleanup_load
+            for pid in "\${MON_PIDS[@]:-}"; do
+              sudo kill -TERM "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            done
+            sudo rmdir "$CGROUP" 2>/dev/null || true
+          }
+          trap cleanup_all EXIT INT TERM
+
+          if [[ "$(stat -fc %T /sys/fs/cgroup)" != "cgroup2fs" ]]; then
+            echo "cgroup_v2_unavailable=1" | tee psi-cgroup-results/capability.txt
+            exit 0
+          fi
+
+          sudo mkdir "$CGROUP"
+          sudo chown "$(id -u):$(id -g)" "$CGROUP" "$CGROUP/cgroup.procs" || true
+
+          if [[ ! -e "$CGROUP/cpu.pressure" || ! -e "$CGROUP/memory.pressure" || ! -e "$CGROUP/io.pressure" ]]; then
+            echo "cgroup_psi_unavailable=1" | tee psi-cgroup-results/capability.txt
+            exit 0
+          fi
+
+          {
+            echo "cgroup_v2=1"
+            echo "cgroup_psi=1"
+            echo "cgroup=$CGROUP"
+          } > psi-cgroup-results/capability.txt
+
+          for resource in cpu memory io; do
+            case "$resource" in
+              cpu) threshold=100000 ;;
+              memory) threshold=20000 ;;
+              io) threshold=50000 ;;
+            esac
+
+            sudo -n python3 validation/psi-crossover/monitor.py \
+              --resource "$resource" \
+              --threshold-us "$threshold" \
+              --window-us 2000000 \
+              --output "psi-cgroup-results/system-$resource.log" &
+            MON_PIDS+=("$!")
+
+            sudo -n python3 validation/psi-crossover/monitor.py \
+              --resource "$resource" \
+              --path "$CGROUP/$resource.pressure" \
+              --threshold-us "$threshold" \
+              --window-us 2000000 \
+              --output "psi-cgroup-results/cgroup-$resource.log" &
+            MON_PIDS+=("$!")
+          done
+
+          sleep 1
+
+          start_load() {
+            local phase="$1"
+            cleanup_load
+            case "$phase" in
+              idle_pre|idle_post) ;;
+              cpu_light)
+                stress-ng --cpu 1 --cpu-method matrixprod --quiet &
+                LOAD_PID=$!
+                ;;
+              cpu_heavy)
+                stress-ng --cpu 0 --cpu-method matrixprod --quiet &
+                LOAD_PID=$!
+                ;;
+              mem_bw)
+                stress-ng --vm 1 --vm-bytes 55% --vm-keep --vm-method write64 --quiet &
+                LOAD_PID=$!
+                ;;
+              cpu_mem)
+                stress-ng --cpu 0 --cpu-method matrixprod \
+                  --vm 1 --vm-bytes 45% --vm-keep --vm-method write64 --quiet &
+                LOAD_PID=$!
+                ;;
+              io_pressure)
+                stress-ng --hdd 1 --hdd-bytes 256M --hdd-opts direct --quiet &
+                LOAD_PID=$!
+                ;;
+            esac
+            if [[ -n "$LOAD_PID" ]]; then sleep 1; fi
+          }
+
+          run_bench_in_cgroup() {
+            local phase="$1"
+            local sweep="$2"
+            bash -c '
+              echo $$ > "$1/cgroup.procs"
+              exec env ALPENCAT_PSI_PHASE="$2" ALPENCAT_PSI_SWEEP="$3" "$4"
+            ' _ "$CGROUP" "$phase" "$sweep" "$BENCH"
+          }
+
+          for phase in idle_pre cpu_light cpu_heavy mem_bw cpu_mem io_pressure idle_post; do
+            phase_start=$(date +%s%N)
+            start_load "$phase"
+
+            for sweep in 1 2 3; do
+              run_bench_in_cgroup "$phase" "$sweep" \
+                > "psi-cgroup-results/sweeps/\${phase}-\${sweep}.txt"
+            done
+
+            cleanup_load
+            phase_end=$(date +%s%N)
+            printf '%s %s\n' "$phase_start" "$phase_end" \
+              > "psi-cgroup-results/phases/\${phase}.window"
+            sleep 0.5
+          done
+
+          cleanup_all
+          trap - EXIT INT TERM
+
+      - name: Analyze system vs cgroup PSI
+        run: |
+          if [[ -f psi-cgroup-results/phases/idle_pre.window ]]; then
+            python3 validation/psi-crossover/analyze_cgroup.py |
+              tee psi-cgroup-results/summary.md
+          else
+            echo "cgroup PSI campaign unavailable on this runner" |
+              tee psi-cgroup-results/summary.md
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: psi-cgroup-\${{ github.run_id }}
+          path: psi-cgroup-results/
+          retention-days: 30
