@@ -83,6 +83,15 @@ jobs:
           python3 validation/psi-crossover/monitor.py             --resource io --threshold-us 50000 --window-us 2000000             --output psi-results/psi-io.log &
           MON_PIDS+=("$!")
 
+          sudo -n python3 validation/psi-crossover/monitor.py             --resource cpu --threshold-us 25000 --window-us 500000             --output psi-results/psi-cpu-fast.log &
+          MON_PIDS+=("$!")
+
+          sudo -n python3 validation/psi-crossover/monitor.py             --resource memory --threshold-us 5000 --window-us 500000             --output psi-results/psi-memory-fast.log &
+          MON_PIDS+=("$!")
+
+          sudo -n python3 validation/psi-crossover/monitor.py             --resource io --threshold-us 10000 --window-us 500000             --output psi-results/psi-io-fast.log &
+          MON_PIDS+=("$!")
+
           sleep 1
 
           start_load() {

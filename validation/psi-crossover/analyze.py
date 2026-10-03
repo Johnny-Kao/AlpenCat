@@ -36,12 +36,12 @@ for (phase, n), vals in rows.items():
 
 events = defaultdict(list)
 for path in sorted(glob.glob("psi-results/psi-*.log")):
-    resource = os.path.basename(path)[4:-4]
+    source = os.path.basename(path)[4:-4]
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             m = re.search(r"psi_event resource=(\w+) wall_ns=(\d+)", line)
             if m:
-                events[resource].append(int(m.group(2)))
+                events[source].append(int(m.group(2)))
 
 phase_windows = {}
 for path in sorted(glob.glob("psi-results/phases/*.window")):
@@ -51,17 +51,18 @@ for path in sorted(glob.glob("psi-results/phases/*.window")):
 
 print("# PSI vs serial/parallel crossover correlation")
 print()
-print("| phase | cpu_events | memory_events | io_events | winner_flips | tested_points | mean_static_regret_pct |")
-print("|---|---:|---:|---:|---:|---:|---:|")
+print("| phase | cpu_events | cpu_fast_events | memory_events | memory_fast_events | io_events | io_fast_events | winner_flips | harmful_points | tested_points | mean_static_regret_pct | max_static_regret_pct |")
+print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 
 phase_summary = {}
 for phase in phase_windows:
     start, end = phase_windows[phase]
     counts = {
         r: sum(start <= ts <= end for ts in events[r])
-        for r in ("cpu", "memory", "io")
+        for r in ("cpu", "cpu-fast", "memory", "memory-fast", "io", "io-fast")
     }
     flips = 0
+    harmful = 0
     tested = 0
     regrets = []
     for (p, n), vals in rows.items():
@@ -74,32 +75,55 @@ for phase in phase_windows:
         tested += 1
         selected = serial if baseline[n] == "SERIAL" else parallel
         oracle = min(serial, parallel)
-        regrets.append(100.0 * (selected - oracle) / oracle if oracle > 0 else 0.0)
+        regret = 100.0 * (selected - oracle) / oracle if oracle > 0 else 0.0
+        regrets.append(regret)
+        harmful += int(regret >= 5.0)
 
     mean_regret = statistics.mean(regrets) if regrets else 0.0
-    phase_summary[phase] = (counts, flips, tested, mean_regret)
+    max_regret = max(regrets) if regrets else 0.0
+    phase_summary[phase] = (counts, flips, harmful, tested, mean_regret, max_regret)
     print(
-        f"| {phase} | {counts['cpu']} | {counts['memory']} | {counts['io']} | "
-        f"{flips} | {tested} | {mean_regret:.3f} |"
+        f"| {phase} | {counts['cpu']} | {counts['cpu-fast']} | "
+        f"{counts['memory']} | {counts['memory-fast']} | "
+        f"{counts['io']} | {counts['io-fast']} | "
+        f"{flips} | {harmful} | {tested} | {mean_regret:.3f} | {max_regret:.3f} |"
     )
 
 print()
 movement_phases = [
-    p for p, (_, flips, _, _) in phase_summary.items()
+    p for p, (_, flips, _, _, _, _) in phase_summary.items()
     if p != "idle_pre" and flips > 0
 ]
-event_phases = [
-    p for p, (counts, _, _, _) in phase_summary.items()
-    if p != "idle_pre" and sum(counts.values()) > 0
+harmful_phases = [
+    p for p, (_, _, harmful, _, _, _) in phase_summary.items()
+    if p != "idle_pre" and harmful > 0
 ]
-caught = [p for p in movement_phases if p in event_phases]
-false_event = [p for p in event_phases if p not in movement_phases]
+normal_event_phases = [
+    p for p, (counts, _, _, _, _, _) in phase_summary.items()
+    if p != "idle_pre"
+    and (counts["cpu"] + counts["memory"] + counts["io"]) > 0
+]
+fast_event_phases = [
+    p for p, (counts, _, _, _, _, _) in phase_summary.items()
+    if p != "idle_pre"
+    and (counts["cpu-fast"] + counts["memory-fast"] + counts["io-fast"]) > 0
+]
+normal_caught = [p for p in harmful_phases if p in normal_event_phases]
+fast_caught = [p for p in harmful_phases if p in fast_event_phases]
+normal_false = [p for p in normal_event_phases if p not in harmful_phases]
+fast_false = [p for p in fast_event_phases if p not in harmful_phases]
 print(
     "psi_phase_summary "
     f"movement_phases={len(movement_phases)} "
-    f"event_phases={len(event_phases)} "
-    f"movement_caught={len(caught)} "
-    f"event_without_movement={len(false_event)}"
+    f"harmful_phases={len(harmful_phases)} "
+    f"normal_event_phases={len(normal_event_phases)} "
+    f"normal_harmful_caught={len(normal_caught)} "
+    f"normal_event_without_harm={len(normal_false)} "
+    f"fast_event_phases={len(fast_event_phases)} "
+    f"fast_harmful_caught={len(fast_caught)} "
+    f"fast_event_without_harm={len(fast_false)}"
 )
 print("movement_phase_names=" + ",".join(movement_phases))
-print("event_phase_names=" + ",".join(event_phases))
+print("harmful_phase_names=" + ",".join(harmful_phases))
+print("normal_event_phase_names=" + ",".join(normal_event_phases))
+print("fast_event_phase_names=" + ",".join(fast_event_phases))
