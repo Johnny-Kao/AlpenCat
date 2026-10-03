@@ -9,6 +9,7 @@ on:
       - "validation/validation-matrix-v3.json"
       - "validation/select-deep-v3.py"
       - "validation/analyze-passive-drift-v3.py"
+      - "validation/analyze-epoch-v3.py"
       - ".github/workflows/validation-matrix-v3.yml"
       - "experiments/target-scenario/**"
       - "benchmarks/fast-route-e2e/**"
@@ -326,6 +327,8 @@ jobs:
           set -euo pipefail
           python3 validation/analyze-passive-drift-v3.py |
             tee campaign-results/passive-drift.md
+          python3 validation/analyze-epoch-v3.py |
+            tee campaign-results/epoch-screen.md
           rm -rf campaign-results-analysis
           mv campaign-results campaign-results-analysis
           mv campaign-results-flat campaign-results
