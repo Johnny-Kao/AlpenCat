@@ -6,3 +6,5 @@ publish = false
 
 [dependencies]
 rayon = "1"
+
+[workspace]
