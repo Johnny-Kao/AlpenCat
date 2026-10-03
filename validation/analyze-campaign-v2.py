@@ -222,7 +222,18 @@ print("|---|---|---:|---:|---:|---:|---:|---:|---:|")
 
 UNCERTAINTY_MARGIN = 0.10
 STEADY_ALPHA = 0.20
-scenario_order = ["mem_bw", "cpu_light", "game_like", "gpu_light", "idle_post"]
+scenario_order = [
+    "cpu_light",
+    "cpu_heavy",
+    "mem_resident",
+    "mem_bw",
+    "gpu_light",
+    "gpu_heavy",
+    "app_like",
+    "video_like",
+    "game_like",
+    "idle_post",
+]
 family_order = {"fir": 0, "fft": 1, "reduction": 2, "conv": 3}
 
 def line_id(family, key):

@@ -232,7 +232,7 @@ jobs:
 
             case "$scenario" in
               idle_pre|idle_post) ;;
-              mem_bw|cpu_light|game_like|gpu_light)
+              cpu_light|cpu_heavy|mem_resident|mem_bw|gpu_light|gpu_heavy|app_like|video_like|game_like)
                 /tmp/loadgen "$scenario" > "campaign-results/load-${scenario}-${PHASE}.txt" 2>&1 &
                 LOAD_PID=$!
                 sleep 1
@@ -271,7 +271,7 @@ jobs:
           snapshot "00_host_initial"
 
           # Phase 1: one broad pass across every kernel and load profile.
-          for scenario in idle_pre mem_bw cpu_light game_like gpu_light idle_post; do
+          for scenario in idle_pre cpu_light cpu_heavy mem_resident mem_bw gpu_light gpu_heavy app_like video_like game_like idle_post; do
             PHASE="quick"
             snapshot "quick_${scenario}_before"
             start_load "$scenario"
@@ -292,7 +292,7 @@ jobs:
 
           # Phase 2: same provisioned runner, deeper repetitions only where the
           # quick pass found useful signal.
-          for scenario in idle_pre mem_bw cpu_light game_like gpu_light idle_post; do
+          for scenario in idle_pre cpu_light cpu_heavy mem_resident mem_bw gpu_light gpu_heavy app_like video_like game_like idle_post; do
             families="$(awk -F '\t' -v s="$scenario" '$1 == s {print $2}' campaign-results/deep-plan.tsv | tr '\n' ' ')"
             [[ -z "$families" ]] && continue
 

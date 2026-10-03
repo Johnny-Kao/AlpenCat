@@ -29,7 +29,19 @@ RESULT_PATTERNS = {
     ),
 }
 
-SCENARIOS = ["idle_pre", "mem_bw", "cpu_light", "game_like", "gpu_light", "idle_post"]
+SCENARIOS = [
+    "idle_pre",
+    "cpu_light",
+    "cpu_heavy",
+    "mem_resident",
+    "mem_bw",
+    "gpu_light",
+    "gpu_heavy",
+    "app_like",
+    "video_like",
+    "game_like",
+    "idle_post",
+]
 
 def parse_snapshot(path):
     text = open(path, encoding="utf-8").read()

@@ -13,7 +13,7 @@
   "quick_phase": {
     "repetitions": 1,
     "kernels": ["FIR", "FFT", "Reduction", "Conv2D"],
-    "scenarios": ["idle_pre", "mem_bw", "cpu_light", "game_like", "gpu_light", "idle_post"]
+    "scenarios": ["idle_pre", "cpu_light", "cpu_heavy", "mem_resident", "mem_bw", "gpu_light", "gpu_heavy", "app_like", "video_like", "game_like", "idle_post"]
   },
   "deep_trigger": {
     "winner_flip_vs_idle": true,

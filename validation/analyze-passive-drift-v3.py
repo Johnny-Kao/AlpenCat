@@ -5,7 +5,19 @@ import re
 import statistics
 from collections import defaultdict
 
-SCENARIO_ORDER = ["idle_pre", "mem_bw", "cpu_light", "game_like", "gpu_light", "idle_post"]
+SCENARIO_ORDER = [
+    "idle_pre",
+    "cpu_light",
+    "cpu_heavy",
+    "mem_resident",
+    "mem_bw",
+    "gpu_light",
+    "gpu_heavy",
+    "app_like",
+    "video_like",
+    "game_like",
+    "idle_post",
+]
 THRESHOLDS = [0.05, 0.10, 0.20, 0.30, 0.50]
 HARMFUL_REGRET = 5.0
 
