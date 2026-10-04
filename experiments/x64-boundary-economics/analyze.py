@@ -51,6 +51,12 @@ def summary_for(rows, boundary):
     }
 
 
+def extra_ns_at_point(row, boundary):
+    oracle = min(row["serial_ns"], row["parallel_ns"])
+    selected = route_time(row, decide(boundary, row["n"]))
+    return max(0.0, selected - oracle)
+
+
 
 def bounded_policy(rows, baseline_boundary, max_steps=3, collapse_ratio=1.8):
     if math.isinf(baseline_boundary):
@@ -107,7 +113,13 @@ def bounded_policy(rows, baseline_boundary, max_steps=3, collapse_ratio=1.8):
 def economic_gate(rows, baseline_rows, baseline_boundary,
                   demand_threshold=32, slowdown_threshold=1.50):
     if math.isinf(baseline_boundary):
-        return {"trigger": False, "reason": "no_baseline_boundary"}
+        return {
+            "trigger": False,
+            "reason": "no_baseline_boundary",
+            "slowdown_ratio": None,
+            "baseline_route": None,
+            "demand_threshold": demand_threshold,
+        }
 
     idx = min(range(len(rows)), key=lambda i: abs(rows[i]["n"] - baseline_boundary))
     base = baseline_rows[idx]
@@ -143,13 +155,26 @@ def gated_economics(rows, baseline_rows, baseline_boundary,
     )
     bounded = summary_for(rows, bounded_boundary)
 
-    # Estimate economics for a stream of near-boundary calls. Immediate severe
-    # slowdown triggers before accumulating demand; otherwise wait N calls.
+    # Estimate economics for the near-boundary stream described by this gate.
+    # Price loss at the measured point nearest the old crossover instead of
+    # averaging over the entire size grid, where far-away zero-loss points would
+    # dilute the estimate.
     wait_calls = 0 if gate["trigger"] else demand_threshold
-    stale_loss_per_call = static["mean_extra_ns_per_call"]
+    if math.isinf(baseline_boundary):
+        stale_loss_per_call = 0.0
+        post_trigger_loss_per_call = 0.0
+    else:
+        boundary_idx = min(
+            range(len(rows)),
+            key=lambda i: abs(rows[i]["n"] - baseline_boundary),
+        )
+        boundary_row = rows[boundary_idx]
+        stale_loss_per_call = extra_ns_at_point(boundary_row, baseline_boundary)
+        post_trigger_loss_per_call = extra_ns_at_point(boundary_row, bounded_boundary)
+
     pre_trigger_loss = stale_loss_per_call * wait_calls
     post_trigger_saved_per_call = max(
-        0.0, static["mean_extra_ns_per_call"] - bounded["mean_extra_ns_per_call"]
+        0.0, stale_loss_per_call - post_trigger_loss_per_call
     )
 
     total_activation_cost = pre_trigger_loss + bounded_cost
@@ -161,6 +186,8 @@ def gated_economics(rows, baseline_rows, baseline_boundary,
         "gate": gate,
         "wait_calls": wait_calls,
         "pre_trigger_stale_loss_ns": pre_trigger_loss,
+        "near_boundary_stale_loss_ns_per_call": stale_loss_per_call,
+        "near_boundary_post_revalidation_loss_ns_per_call": post_trigger_loss_per_call,
         "bounded_mode": bounded_mode,
         "bounded_cost_ns": bounded_cost,
         "bounded_summary": bounded,
@@ -255,7 +282,8 @@ for name, d in results["phases"].items():
     g = d["economic_gate"]
     gate = g["gate"]
     be = "n/a" if g["break_even_calls_after_event"] is None else f"{g['break_even_calls_after_event']:.2f}"
-    print(f"| {name} | {s['mean_regret_pct']:.3f}% | {gate['slowdown_ratio']:.3f}x | {gate['reason']} | {g['wait_calls']} | {g['bounded_cost_ns']/1e6:.3f} ms | {be} |")
+    slowdown = "n/a" if gate["slowdown_ratio"] is None else f"{gate['slowdown_ratio']:.3f}x"
+    print(f"| {name} | {s['mean_regret_pct']:.3f}% | {slowdown} | {gate['reason']} | {g['wait_calls']} | {g['bounded_cost_ns']/1e6:.3f} ms | {be} |")
 
 
 print()
