@@ -28,10 +28,11 @@ PublishedBoundary -----> FastRoute -----> backend
 near-boundary demand
       |
       v
-bounded revalidation
+bounded local revalidation
       |
-      v
-publish new boundary
+      +-- crossover found -> publish new boundary
+      |
+      +-- no local crossover -> keep unmeasured region stale
 ```
 
 ### Core primitives
@@ -48,9 +49,11 @@ The currently trusted crossover state plus the resource epoch at which it was va
 
 A direct comparison against the published boundary. It does not run telemetry, prediction, or alternate-route probes.
 
-**Bounded revalidation**
+**Bounded local revalidation**
 
 A cold-path mechanism entered only when stale state and relevant demand justify paying measurement cost.
+
+Robustness testing added an important constraint: **local evidence stays local**. If a bounded search finds no crossover inside its measured window, AlpenCat keeps unmeasured regions stale rather than publishing a global serial fallback.
 
 ## Active crates
 
@@ -123,9 +126,8 @@ See [Native Validation](./NATIVE_VALIDATION.md).
 
 ## Remaining validation
 
-The next two technical gates are:
+Cross-platform concurrency stress and the production-code x64 hot-path matrix now pass.
 
-1. run the production-core hot-path matrix using the current `PublishedBoundary` + `ResourceEpoch` implementation;
-2. receive a real physical-server native event and connect it to the epoch invalidation path.
+The remaining architecture gate is to receive a real physical-server native event and connect it to the epoch invalidation path, then exercise the localized revalidation rule end-to-end.
 
-No broader scheduler redesign is planned unless those tests produce evidence that forces one.
+No broader scheduler redesign is planned unless native integration evidence forces one.

@@ -251,4 +251,85 @@ mod tests {
             BoundarySnapshot::new(BoundaryProfile::new(16, 64), 4)
         );
     }
+
+    #[test]
+    fn concurrent_publication_never_exposes_a_torn_snapshot() {
+        use std::sync::Arc;
+        use std::thread;
+
+        const WRITES: usize = 200_000;
+        const READS_PER_THREAD: usize = 300_000;
+        const READER_THREADS: usize = 8;
+
+        let boundary = Arc::new(PublishedBoundary::new(
+            BoundaryProfile::new(1, 17),
+            0xA5A5_A5A5_A5A5_A5A4,
+        ));
+
+        let writer_boundary = Arc::clone(&boundary);
+        let writer = thread::spawn(move || {
+            for i in 1..=WRITES {
+                let serial = i;
+                let cpu = serial.wrapping_mul(16).wrapping_add(1);
+                let epoch = (serial as u64) ^ 0xA5A5_A5A5_A5A5_A5A5;
+                writer_boundary.publish(BoundarySnapshot::new(
+                    BoundaryProfile::new(serial, cpu),
+                    epoch,
+                ));
+            }
+        });
+
+        let mut readers = Vec::new();
+        for _ in 0..READER_THREADS {
+            let reader_boundary = Arc::clone(&boundary);
+            readers.push(thread::spawn(move || {
+                for _ in 0..READS_PER_THREAD {
+                    let snapshot = reader_boundary.snapshot();
+                    assert_eq!(
+                        snapshot.profile.cpu_max_items,
+                        snapshot
+                            .profile
+                            .serial_max_items
+                            .wrapping_mul(16)
+                            .wrapping_add(1)
+                    );
+                    assert_eq!(
+                        snapshot.resource_epoch,
+                        (snapshot.profile.serial_max_items as u64) ^ 0xA5A5_A5A5_A5A5_A5A5
+                    );
+                }
+            }));
+        }
+
+        writer.join().expect("writer thread must complete");
+        for reader in readers {
+            reader.join().expect("reader thread must complete");
+        }
+    }
+
+    #[test]
+    fn randomized_epoch_cycles_preserve_stale_semantics() {
+        let epoch = ResourceEpoch::new();
+        let boundary = PublishedBoundary::new(BoundaryProfile::new(64, 4096), 0);
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+
+        for _ in 0..100_000 {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+
+            if state & 1 == 0 {
+                epoch.invalidate();
+                assert!(epoch.is_stale(boundary.snapshot().resource_epoch));
+            } else {
+                let serial = 1 + ((state >> 8) as usize % 16_384);
+                let cpu = serial + 1 + ((state >> 32) as usize % 1_000_000);
+                boundary.publish(BoundarySnapshot::new(
+                    BoundaryProfile::new(serial, cpu),
+                    epoch.current(),
+                ));
+                assert!(!epoch.is_stale(boundary.snapshot().resource_epoch));
+            }
+        }
+    }
 }
