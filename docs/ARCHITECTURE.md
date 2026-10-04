@@ -1,156 +1,131 @@
-# AlpenCat — Architecture and Research Direction
+# AlpenCat Architecture
 
 > Updated: 2026-10-04  
-> Status: Architecture converged; native integration validation open
+> Status: Converged minimal runtime; native integration validation open
 
-## Current research statement
+## Research question
 
-AlpenCat asks:
+> **How little runtime machinery is required to keep an execution boundary trustworthy when available compute changes?**
 
-> **Can execution boundaries remain valid under changing compute conditions using only native state transitions, a tiny stale/epoch mechanism, and bounded local revalidation — without continuous performance prediction?**
+The answer has narrowed through measurement and falsification.
 
-The architecture-exploration phase is now effectively complete.
+AlpenCat no longer attempts to be a general adaptive scheduler.
 
-The remaining work is validation of real platform adapters and exact implementation overhead.
-
-## Converged architecture
+## Active architecture
 
 ```text
-native transition semantics
-        |
-        v
-ResourceEpoch / stale
-        |
-        +---- normal calls remain on FastRoute
-        |
-        v
-future near-boundary demand
-        |
-        v
-bounded revalidation when justified
-        |
-        v
-publish updated boundary
+PlatformAdapter
+      |
+      | resource state changed
+      v
+ResourceEpoch
+      |
+      v
+PublishedBoundary -----> FastRoute -----> backend
+      |
+      | stale?
+      v
+near-boundary demand
+      |
+      v
+bounded revalidation
+      |
+      v
+publish new boundary
 ```
 
-Minimal candidate:
+### Core primitives
+
+**ResourceEpoch**
+
+A monotonic invalidation signal. Thin native adapters advance it when a relevant platform transition occurs.
+
+**PublishedBoundary**
+
+The currently trusted crossover state plus the resource epoch at which it was validated. Reads are lock-free; publication uses a small sequence protocol so readers cannot observe mixed boundary fields.
+
+**FastRoute**
+
+A direct comparison against the published boundary. It does not run telemetry, prediction, or alternate-route probes.
+
+**Bounded revalidation**
+
+A cold-path mechanism entered only when stale state and relevant demand justify paying measurement cost.
+
+## Active crates
+
+| Crate | Responsibility |
+| --- | --- |
+| `runtime-core` | Boundary, publication, ResourceEpoch, shared execution primitives |
+| `runtime-selector` | FastRoute |
+| `runtime-api` | Public runtime surface and explicit invalidation/publication |
+| `runtime-cpu-rayon` | CPU execution backend |
+| `runtime-gpu-wgpu` | Optional GPU execution backend |
+| `runtime-machine` | Lightweight capability discovery |
+
+## Removed from the active design
+
+The following were implemented and tested during earlier exploration, but are no longer architectural requirements:
+
+- continuous runtime telemetry;
+- online cost models;
+- adaptive execution planners;
+- resource brokers;
+- policy caches driven by live resource fingerprints;
+- continuous rebalancing;
+- general work-unit scheduling;
+- migration/lease control layers;
+- CFFI-specific routing experiments.
+
+They were removed rather than retained as compatibility baggage.
+
+Recovery point:
 
 ```text
-FastRoute
-+ Boundary
-+ ResourceEpoch / stale
-+ optional transition direction / magnitude
-+ near-boundary demand
-+ optional routed-call slowdown accelerator
-+ bounded revalidation
-+ conservative fallback
-+ thin platform adapters
+archive/pre-runtime-pruning-2026-10-04
 ```
 
-## What has been removed as a default requirement
+Git history and prior PRs preserve the full implementation record.
 
-The current evidence does not justify placing the following on the normal runtime path:
+## Why the scope shrank
 
-- continuous telemetry;
-- periodic active probing;
-- global cost prediction;
-- online ML;
-- a general-purpose scheduler;
-- eager recalibration after every resource transition;
-- unbounded crossover search;
-- a universal fixed slowdown classifier.
+Experiments established:
 
-These may remain useful as research baselines, but they are not part of the current architectural commitment.
+1. boundary invalidation is real;
+2. many transitions are harmless enough that eager work is wasteful;
+3. full recalibration can be much more expensive than stale-boundary regret;
+4. bounded local validation is sufficient for the severe cases tested;
+5. slowdown magnitude is useful evidence but not a universal state classifier;
+6. native platform semantics are a better trigger than continuous inference.
 
-## Core findings
+The surviving architecture therefore pays almost nothing in the steady state and spends only after a meaningful invalidation.
 
-### 1. Boundary invalidation is real
+## Native adapter contract
 
-Controlled x64 experiments demonstrated that a previously correct serial/parallel crossover can move substantially under strong contention or severe capacity loss.
-
-### 2. Invalidation must be lazy
-
-Mild capacity changes frequently produced little or no boundary movement. Therefore:
+A native adapter should remain thin:
 
 ```text
-resource transition != immediate recalibration
+native event
+-> normalize minimal transition metadata if available
+-> ResourceEpoch.invalidate()
 ```
 
-The transition should first invalidate confidence, not automatically spend measurement budget.
+It should not:
 
-### 3. Revalidation must be bounded
+- choose a backend;
+- run a predictor;
+- own a scheduler;
+- continuously poll performance counters when an event interface exists.
 
-Full outward crossover search becomes economically poor when the parallel route disappears.
+Intel HFI is the first native validation target.
 
-A bounded neighborhood search plus conservative fallback sharply reduced this pathological cost.
+See [Native Validation](./NATIVE_VALIDATION.md).
 
-### 4. Revalidation spending must also be lazy
+## Remaining validation
 
-Even bounded revalidation can be wasteful when stale-boundary regret is tiny.
+The next two technical gates are:
 
-The control plane should remain dormant until relevant demand makes the check economically meaningful.
+1. run the production-core hot-path matrix using the current `PublishedBoundary` + `ResourceEpoch` implementation;
+2. receive a real physical-server native event and connect it to the epoch invalidation path.
 
-### 5. Route slowdown is secondary evidence
-
-Across heterogeneous Intel/AMD runners, heavy contention produced a strong slowdown signal.
-
-However, mild and severe CPU-budget reductions overlapped. A fixed slowdown threshold therefore cannot be the primary universal classifier.
-
-Native transition semantics should be used first when the platform exposes them.
-
-### 6. The hot path remains lightweight
-
-A dedicated microbenchmark across eight independent x64 runners measured the normal relaxed epoch-check path at approximately:
-
-```text
-+0.016 to +0.514 ns / routed call
-```
-
-This supports retaining a tiny resource-epoch check in the normal FastRoute.
-
-## Current validation boundary
-
-Completed or provisionally passed:
-
-- problem existence;
-- stale-boundary regret;
-- lazy invalidation;
-- bounded revalidation;
-- revalidation economics;
-- heterogeneous Intel/AMD x64 mechanism testing;
-- normal hot-path lightness;
-- control-policy convergence.
-
-Still open:
-
-- real hardware/OS event -> adapter;
-- adapter -> ResourceEpoch end-to-end delivery;
-- event latency and stale-window measurement;
-- exact production implementation overhead;
-- vendor/platform coverage.
-
-## Leading native adapter: Intel HFI
-
-Linux `CONFIG_INTEL_HFI_THERMAL` can relay CPU performance and efficiency capability updates to userspace through the thermal Generic Netlink event family.
-
-The first native proof should establish:
-
-```text
-physical capability transition
--> Intel HFI
--> Linux thermal Generic Netlink
--> userspace validation probe
--> AlpenCat ResourceEpoch
--> bounded routing response
-```
-
-The external validation protocol is documented in:
-
-- `docs/NATIVE_VALIDATION.md`
-- `tools/native-validation/`
-
-## Research discipline
-
-AlpenCat continues to prefer the smallest surviving mechanism.
-
-The next phase should validate the converged design, not reopen scheduler architecture unless native integration evidence forces that change.
+No broader scheduler redesign is planned unless those tests produce evidence that forces one.
