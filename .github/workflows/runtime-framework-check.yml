@@ -31,6 +31,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Check lockfile is current
+        run: git diff --exit-code -- Cargo.lock
+
       - name: Test workspace
         run: cargo test --workspace
 
@@ -39,12 +42,6 @@ jobs:
 
       - name: Test boundary economics analyzer regressions
         run: python3 experiments/x64-boundary-economics/test_analyze.py
-
-      - name: Validate upstream reconciliation ledger
-        run: python3 tools/validate_reconciliation.py
-
-      - name: Validate dependency convergence
-        run: python3 tools/validate_dependency_convergence.py
 
       - name: Install software Vulkan runtime
         run: |

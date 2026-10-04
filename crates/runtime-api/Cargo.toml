@@ -11,16 +11,8 @@ publish.workspace = true
 runtime-core = { path = "../runtime-core" }
 runtime-cpu-rayon = { path = "../runtime-cpu-rayon" }
 runtime-gpu-wgpu = { path = "../runtime-gpu-wgpu" }
-runtime-integration = { path = "../runtime-integration" }
 runtime-machine = { path = "../runtime-machine" }
 runtime-selector = { path = "../runtime-selector" }
-runtime-telemetry = { path = "../runtime-telemetry" }
-runtime-planner = { path = "../runtime-planner" }
-runtime-broker = { path = "../runtime-broker" }
-runtime-cost-model = { path = "../runtime-cost-model" }
-runtime-execution-planner = { path = "../runtime-execution-planner" }
-runtime-policy-cache = { path = "../runtime-policy-cache" }
-runtime-rebalancer = { path = "../runtime-rebalancer" }
 
 [dev-dependencies]
 rayon = "1.12.0"
