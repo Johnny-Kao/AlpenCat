@@ -1,4 +1,4 @@
-name: AlpenCat x64 Boundary Economics
+name: name: AlpenCat x64 Boundary Economics
 
 on:
   workflow_dispatch:
@@ -100,3 +100,4 @@ jobs:
           name: x64-boundary-economics-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
           path: results/x64-economics/
           retention-days: 30
+\n\non:\n  workflow_dispatch:\n
