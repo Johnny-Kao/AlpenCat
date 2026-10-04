@@ -1,0 +1,38 @@
+name: Native Validation Probe CI
+
+on:
+  push:
+    branches:
+      - main
+      - release/native-validation-refresh
+    paths:
+      - "tools/native-validation/**"
+      - ".github/workflows/native-validation-probe.yml"
+  pull_request:
+    paths:
+      - "tools/native-validation/**"
+      - ".github/workflows/native-validation-probe.yml"
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: bash -n tools/native-validation/alpencat-native-probe.sh
+
+      - name: Build CPUID helper
+        run: |
+          cc -O2 -Wall -Wextra -Werror             tools/native-validation/cpuid_hfi.c             -o /tmp/cpuid_hfi
+          /tmp/cpuid_hfi
+
+      - name: Build thermal event listener
+        run: |
+          cc -O2 -Wall -Wextra -Werror             tools/native-validation/thermal_event_listener.c             -o /tmp/thermal_event_listener
+
+      - name: Smoke-test passive probe
+        run: |
+          tools/native-validation/alpencat-native-probe.sh --listen-seconds 1
+          test -n "$(find . -maxdepth 1 -name 'alpencat-native-validation-*.tar.gz' -print -quit)"
