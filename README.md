@@ -3,8 +3,8 @@
 </h1>
 <br>
 
-[![Status: Experimental](https://img.shields.io/badge/status-experimental-orange)](./CURRENT_RESEARCH_DIRECTION.md)
-[![Architecture: Converged](https://img.shields.io/badge/architecture-converged-2ea44f)](./CURRENT_RESEARCH_DIRECTION.md)
+[![Status: Experimental](https://img.shields.io/badge/status-experimental-orange)](./docs/ARCHITECTURE.md)
+[![Architecture: Converged](https://img.shields.io/badge/architecture-converged-2ea44f)](./docs/ARCHITECTURE.md)
 [![Validation: Native hardware](https://img.shields.io/badge/validation-native%20hardware-blue)](./docs/NATIVE_VALIDATION.md)
 [![Rust](https://img.shields.io/badge/Rust-1.87%2B-000000?logo=rust)](./Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](#license)
@@ -160,7 +160,7 @@ Historical telemetry, planners, cost models, brokers, rebalancers, CPU/GPU exper
 
 See:
 
-- [Current research direction](./CURRENT_RESEARCH_DIRECTION.md)
+- [Architecture and research direction](./docs/ARCHITECTURE.md)
 - [Validation status](./docs/VALIDATION_STATUS.md)
 - [Historical v0.1 architecture](./docs/HISTORICAL_ARCHITECTURE_V0_1.md)
 

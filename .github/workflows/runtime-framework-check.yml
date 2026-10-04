@@ -37,6 +37,9 @@ jobs:
       - name: Build documentation
         run: cargo doc --workspace --no-deps
 
+      - name: Test boundary economics analyzer regressions
+        run: python3 experiments/x64-boundary-economics/test_analyze.py
+
       - name: Validate upstream reconciliation ledger
         run: python3 tools/validate_reconciliation.py
 

@@ -6,8 +6,8 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEPENDENCIES = ROOT / "upstream-dependencies.toml"
-RECONCILIATION = ROOT / "upstream-reconciliation.toml"
+DEPENDENCIES = ROOT / "research/upstream/dependencies.toml"
+RECONCILIATION = ROOT / "research/upstream/reconciliation.toml"
 CARGO_LOCK = ROOT / "Cargo.lock"
 
 REQUIRED = {
@@ -57,7 +57,7 @@ def main() -> int:
     rec_data = load(RECONCILIATION)
 
     if dep_data.get("schema_version") != 2:
-        raise ValueError("upstream-dependencies.toml schema_version must be 2")
+        raise ValueError("research/upstream/dependencies.toml schema_version must be 2")
 
     dependencies = dep_data.get("dependency", [])
     reconciliation_ids = {source["id"] for source in rec_data.get("source", [])}

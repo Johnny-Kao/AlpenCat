@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LEDGER = ROOT / "upstream-reconciliation.toml"
+LEDGER = ROOT / "research/upstream/reconciliation.toml"
 
 SOURCE_REQUIRED = {
     "id",
