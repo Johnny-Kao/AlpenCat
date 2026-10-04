@@ -9,105 +9,162 @@
 | Can a calibrated boundary become wrong after resource conditions change? | Validated |
 | Should every resource transition trigger immediate recalibration? | Falsified |
 | Is unbounded crossover search economically acceptable? | Falsified |
-| Does bounded local revalidation materially reduce pathological search cost? | Validated |
+| Is global SERIAL fallback safe when a bounded search finds no crossover? | **Falsified** |
+| Does localized evidence without extrapolation avoid that regression? | **Supported: 0/320 regressions in rerun** |
 | Is one fixed slowdown threshold a universal capacity-loss classifier? | Falsified |
-| Is slowdown still useful as secondary severe-case evidence? | Supported |
-| Can the epoch mechanism be extremely small in absolute cost? | Supported by prior 8-runner microbenchmark |
-| Has the new production `PublishedBoundary + ResourceEpoch` path been re-benchmarked? | Open |
+| Is the production PublishedBoundary + ResourceEpoch core concurrency-safe under stress? | **Validated across 12 cross-platform jobs** |
+| Is the production hot path still lightweight after pruning? | **Validated across 8 x64 jobs** |
 | Has a real vendor-native hardware event reached AlpenCat end-to-end? | Open |
 
-## Boundary economics
+## 1. Production-core robustness
 
-Primary heterogeneous x64 run:
+Cross-platform stress run:
 
-- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37156808130
+- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37186182010
 
-Eight independently allocated Ubuntu x64 runners included Intel Xeon and AMD EPYC systems.
+Matrix:
 
-Observed slowdown ranges at the old crossover:
+- Ubuntu 22.04 × 3
+- Ubuntu 24.04 × 3
+- Windows 2025 × 3
+- macOS 14 / Apple Silicon × 3
 
-| Regime | Range |
-| --- | ---: |
-| Half effective CPU budget | 1.086x - 1.397x |
-| One effective worker | 1.341x - 1.817x |
-| Strong external contention | 1.518x - 2.233x |
+Observed Linux allocations included AMD EPYC 7763 and AMD EPYC 9V74. The macOS runners reported aarch64-apple-darwin / Apple M1 (Virtual).
 
-Half-budget and one-worker ranges overlap. Therefore slowdown alone cannot be the primary universal classifier.
+All **12/12 jobs passed**.
 
-Strong contention remained clearly visible across all eight samples.
+Each job exercised:
 
-## Revalidation economics
+- 200,000 concurrent boundary publications;
+- 8 reader threads × 300,000 lock-free snapshots;
+- 1,000,000 randomized FastRoute decisions checked against a reference model;
+- 100,000 randomized invalidate/publish epoch cycles;
+- Rayon execution-budget tests.
 
-Representative earlier controlled results:
+Across the 12 jobs this is approximately:
 
-| Regime | Full localized search | Bounded policy |
-| --- | ---: | ---: |
-| One-worker collapse | ~33 ms | ~1 ms |
-| Strong contention | ~100 ms | ~1-2 ms |
+- 28.8 million concurrent boundary snapshots;
+- 2.4 million boundary publications;
+- 12 million randomized route checks;
+- 1.2 million randomized epoch cycles.
 
-The stable conclusion is architectural rather than tied to one exact number: bounded local validation avoids paying the full cost of proving that a distant or nonexistent crossover exists.
+No torn boundary snapshot, stale-state invariant failure, or routing mismatch was observed.
 
-The analyzer now prices near-boundary break-even using the measured point nearest the old crossover rather than averaging across the entire benchmark grid.
+## 2. Expanded x64 resource matrix
 
-## Hot-path evidence
+First expanded run:
 
-Prior 8-runner microbenchmark:
+- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37186182005
 
-- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37177541260
+The 8 independently allocated Linux x64 jobs covered Ubuntu 22.04 / 24.04 and observed AMD EPYC 7763 plus Intel Xeon Platinum 8370C hardware.
 
-Observed incremental cost versus the synthetic baseline:
+Each job measured:
+
+- full budget;
+- 3-thread budget;
+- half budget;
+- 1-thread budget;
+- Rayon oversubscription;
+- light external contention;
+- heavy external contention;
+- post-contention recovery.
+
+Random replay evaluated 32 deterministic seeds × 4,096 calls × 5 workload distributions across every measured phase, or roughly **41.9 million replayed calls** across the 8 jobs.
+
+### Falsification: global fallback
+
+The earlier research policy used:
+
+~~~text
+bounded search finds no crossover
+-> assume crossover disappeared
+-> global SERIAL fallback
+~~~
+
+That is not safe.
+
+In the first expanded run, **7/320 phase/distribution combinations** showed a routing-regret regression under this policy.
+
+A representative one-thread case moved the actual crossover from 16,384 to 262,144. The bounded search inspected 16,384 -> 32,768 -> 65,536, found no crossover, and incorrectly extrapolated that local evidence to all larger workloads.
+
+For some large/bimodal random streams, cumulative routing regret became roughly **4.15× worse** than retaining the stale boundary.
+
+The correct conclusion is: a bounded search proves only what it measured. Failure to find a crossover locally is not evidence that no crossover exists globally.
+
+## 3. Localized evidence, no extrapolation
+
+Rerun:
+
+- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37186607338
+
+Rule:
+
+~~~text
+bounded local search
+-> update only the measured/validated region
+-> leave unmeasured regions stale/unknown
+-> do not publish a global SERIAL fallback
+~~~
+
+Across the rerun:
+
+- 8/8 economics jobs succeeded;
+- 320 phase/distribution combinations were replayed;
+- **0/320 localized-policy regressions** were observed.
+
+On the first-run raw datasets, the same localized interpretation reduced one-thread routing regret by roughly **22%–60%** without extrapolating into unmeasured large-workload regions.
+
+Heavy contention often requires additional future local validation farther from the old boundary; one small local check cannot safely infer the entire crossover curve.
+
+## 4. Production hot-path overhead
+
+Production-code run:
+
+- https://github.com/Johnny-Kao/AlpenCat/actions/runs/37186703335
+
+This benchmark imports the current production runtime-core and runtime-selector implementation directly, including PublishedBoundary and ResourceEpoch.
+
+All **8/8 x64 jobs passed**.
 
 | Path | Incremental cost |
 | --- | ---: |
-| Relaxed epoch-match path | ~0.016 to ~0.514 ns/call |
-| Stale but far from boundary | ~0.266 to ~0.878 ns/call |
-| Stale + near-boundary + atomic demand counter | ~0.939 to ~7.403 ns/call |
+| Production epoch-match path | **~0.198 to ~0.614 ns/call** |
+| Stale but far from boundary | **~0.471 to ~1.123 ns/call** |
+| Stale + near-boundary bookkeeping | **~0.494 to ~6.461 ns/call** |
 
-These numbers motivated keeping the epoch mechanism.
+The normal production path therefore remained below approximately **0.7 ns/call** across this matrix.
 
-They are **not** the final production claim.
+## 5. Current architectural conclusion
 
-The current benchmark now imports the production `runtime-core` and `runtime-selector` implementation directly, including the lock-free published-boundary snapshot. That matrix must be rerun before replacing the prior numbers.
+The stable core is:
 
-## Current architecture
-
-```text
+~~~text
 native transition
 + ResourceEpoch
 + PublishedBoundary
 + FastRoute
-+ near-boundary demand
-+ bounded revalidation
-+ conservative fallback
-```
++ localized validity
++ lazy bounded revalidation
+~~~
 
-Not active requirements:
+Key rule from robustness testing:
 
-- continuous telemetry;
-- online cost prediction;
-- general scheduling;
-- resource brokering;
-- continuous rebalancing;
-- periodic active probing.
+> **Local evidence stays local.**
 
-## Remaining evidence
+A revalidation routine may publish a new global boundary when it actually observes a nearby crossover. If it exhausts its local budget without finding one, it must not infer boundary = infinity. The boundary remains stale outside the validated region, and future relevant demand may justify another local check.
 
-### Production hot path
+## 6. Remaining evidence
 
-Run the current `x64-hotpath-overhead` matrix against exact production code.
+The main remaining architecture gate is native event delivery:
 
-### Native event path
-
-Establish:
-
-```text
+~~~text
 physical platform transition
 -> native kernel / firmware signal
--> userspace adapter
+-> thin userspace adapter
 -> ResourceEpoch increment
 -> stale boundary observed
--> bounded runtime response
-```
+-> localized bounded runtime response
+~~~
 
 Intel HFI remains the first target.
 
