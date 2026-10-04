@@ -1,6 +1,9 @@
 name: AlpenCat x64 Hot Path Overhead
 
 on:
+  push:
+    branches:
+      - validation/robustness-matrix
   workflow_dispatch:
 
 jobs:
@@ -15,8 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
 
       - name: Record metadata
         run: |
