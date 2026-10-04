@@ -610,47 +610,16 @@ name = "runtime-api"
 version = "0.1.0"
 dependencies = [
  "rayon",
- "runtime-broker",
  "runtime-core",
- "runtime-cost-model",
  "runtime-cpu-rayon",
- "runtime-execution-planner",
  "runtime-gpu-wgpu",
- "runtime-integration",
  "runtime-machine",
- "runtime-planner",
- "runtime-policy-cache",
- "runtime-rebalancer",
  "runtime-selector",
- "runtime-telemetry",
 ]
-
-[[package]]
-name = "runtime-broker"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
- "runtime-planner",
- "runtime-telemetry",
-]
-
-[[package]]
-name = "runtime-cffi-bridge"
-version = "0.1.0"
 
 [[package]]
 name = "runtime-core"
 version = "0.1.0"
-
-[[package]]
-name = "runtime-cost-model"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
- "runtime-machine",
- "runtime-selector",
- "runtime-telemetry",
-]
 
 [[package]]
 name = "runtime-cpu-rayon"
@@ -658,16 +627,6 @@ version = "0.1.0"
 dependencies = [
  "rayon",
  "runtime-core",
-]
-
-[[package]]
-name = "runtime-execution-planner"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
- "runtime-cost-model",
- "runtime-machine",
- "runtime-telemetry",
 ]
 
 [[package]]
@@ -682,51 +641,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "runtime-integration"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
- "runtime-execution-planner",
-]
-
-[[package]]
 name = "runtime-machine"
 version = "0.1.0"
 
 [[package]]
-name = "runtime-planner"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
-]
-
-[[package]]
-name = "runtime-policy-cache"
-version = "0.1.0"
-dependencies = [
- "runtime-broker",
- "runtime-core",
- "runtime-telemetry",
-]
-
-[[package]]
-name = "runtime-rebalancer"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
- "runtime-execution-planner",
- "runtime-telemetry",
-]
-
-[[package]]
 name = "runtime-selector"
-version = "0.1.0"
-dependencies = [
- "runtime-core",
-]
-
-[[package]]
-name = "runtime-telemetry"
 version = "0.1.0"
 dependencies = [
  "runtime-core",
