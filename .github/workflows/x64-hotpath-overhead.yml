@@ -1,0 +1,53 @@
+name: AlpenCat x64 Hot Path Overhead
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/c-fast-route-poc
+    paths:
+      - "benchmarks/x64-hotpath-overhead/**"
+      - ".github/workflows/x64-hotpath-overhead.yml"
+
+jobs:
+  overhead:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Record metadata
+        run: |
+          mkdir -p results/x64-hotpath
+          {
+            echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${{ matrix.os }}"
+            echo "sample=${{ matrix.sample }}"
+            lscpu
+            cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
+          } > results/x64-hotpath/runner_metadata.txt
+
+      - name: Build
+        run: cargo build --release --manifest-path benchmarks/x64-hotpath-overhead/Cargo.toml
+
+      - name: Benchmark
+        run: |
+          benchmarks/x64-hotpath-overhead/target/release/x64-hotpath-overhead \
+            | tee results/x64-hotpath/summary.csv
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: x64-hotpath-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
+          path: results/x64-hotpath/
+          retention-days: 30
