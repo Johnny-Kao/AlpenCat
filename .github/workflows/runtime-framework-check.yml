@@ -31,6 +31,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Check lockfile is current
+        run: git diff --exit-code -- Cargo.lock
+
       - name: Test workspace
         run: cargo test --workspace
 
