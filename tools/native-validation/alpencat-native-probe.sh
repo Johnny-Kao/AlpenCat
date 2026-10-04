@@ -50,7 +50,6 @@ HOST="$(hostname 2>/dev/null | tr -c 'A-Za-z0-9._-' '_' || echo unknown)"
 OUT="alpencat-native-validation-${STAMP}-${HOST}"
 mkdir -p "$OUT"
 
-SYSTEM="$OUT/system.txt"
 CPUID_OUT="$OUT/cpuid_hfi.txt"
 KCONFIG="$OUT/kernel_config.txt"
 DMESG_BEFORE="$OUT/dmesg_before.txt"
@@ -222,19 +221,13 @@ fi
 {
   echo "kernel=$(uname -r)"
   if [[ -r "/boot/config-$(uname -r)" ]]; then
-    grep -E '^(CONFIG_INTEL_HFI_THERMAL|CONFIG_THERMAL_NETLINK|CONFIG_X86_THERMAL_VECTOR)='       "/boot/config-$(uname -r)" || true
+    grep -E '^(CONFIG_INTEL_HFI_THERMAL|CONFIG_THERMAL_NETLINK|CONFIG_X86_THERMAL_VECTOR|CONFIG_INTEL_TCC)='       "/boot/config-$(uname -r)" || true
   elif [[ -r /proc/config.gz ]]; then
-    zgrep -E '^(CONFIG_INTEL_HFI_THERMAL|CONFIG_THERMAL_NETLINK|CONFIG_X86_THERMAL_VECTOR)='       /proc/config.gz || true
+    zgrep -E '^(CONFIG_INTEL_HFI_THERMAL|CONFIG_THERMAL_NETLINK|CONFIG_X86_THERMAL_VECTOR|CONFIG_INTEL_TCC)='       /proc/config.gz || true
   else
     echo "kernel config not readable from /boot/config-* or /proc/config.gz"
   fi
 } > "$KCONFIG"
-
-if command -v dmesg >/dev/null 2>&1; then
-  dmesg 2>&1 | grep -Ei 'hardware feedback|intel.*hfi|\bhfi\b|thermal.*capab'     >"$DMESG_OUT" || true
-else
-  echo "dmesg unavailable" >"$DMESG_OUT"
-fi
 
 LISTENER_STATUS="compile_failed"
 : >"$EVENTS"
@@ -243,19 +236,48 @@ LISTENER_STATUS="compile_failed"
 if [[ -n "$CC_BIN" ]]; then
   if "$CC_BIN" -O2 -Wall -Wextra -Werror       "$SCRIPT_DIR/thermal_event_listener.c"       -o "$OUT/thermal_event_listener"       >>"$LISTENER_ERR" 2>&1; then
     LISTENER_STATUS="compiled"
-    echo "READY_FOR_TRANSITION" >&2
-    echo "Listening passively for CPU capability-change events for ${LISTEN_SECONDS}s..." >&2
-    echo "Trigger the approved platform transition now." >&2
     LISTEN_START="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-    "$OUT/thermal_event_listener" "$LISTEN_SECONDS"       >"$EVENTS" 2>>"$LISTENER_ERR"
+    "$OUT/thermal_event_listener" "$LISTEN_SECONDS" >"$EVENTS" 2>>"$LISTENER_ERR" &
+    LISTENER_PID=$!
+
+    LISTENER_READY="no"
+    for _ in $(seq 1 100); do
+      if grep -q '^listening family=' "$LISTENER_ERR" 2>/dev/null; then
+        LISTENER_READY="yes"
+        break
+      fi
+      if ! kill -0 "$LISTENER_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 0.05
+    done
+
+    if [[ "$LISTENER_READY" == "yes" ]]; then
+      READY_TIME="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+      echo "listener_ready_utc=$READY_TIME" >>"$LISTENER_ERR"
+      echo "READY_FOR_TRANSITION" >&2
+      echo "Listening passively for CPU capability-change events for ${LISTEN_SECONDS}s..." >&2
+      echo "Trigger the approved platform transition now." >&2
+    else
+      echo "PRECHECK_FAILED: thermal Generic Netlink listener never reached ready state." >&2
+    fi
+
+    wait "$LISTENER_PID"
     RC=$?
     LISTEN_END="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
     {
       echo "listen_start_utc=$LISTEN_START"
       echo "listen_end_utc=$LISTEN_END"
     } >>"$LISTENER_ERR"
+
     case "$RC" in
-      0) LISTENER_STATUS="completed" ;;
+      0)
+        if [[ "$LISTENER_READY" == "yes" ]]; then
+          LISTENER_STATUS="completed"
+        else
+          LISTENER_STATUS="not_ready"
+        fi
+        ;;
       3) LISTENER_STATUS="thermal_netlink_unavailable" ;;
       4) LISTENER_STATUS="membership_failed" ;;
       *) LISTENER_STATUS="listener_error_${RC}" ;;
@@ -281,7 +303,7 @@ fi
 
 if [[ "$EVENT_COUNT" -gt 0 ]]; then
   OVERALL="EVENT_OBSERVED"
-elif [[ "$HFI_SUPPORTED" == "yes" && "$LISTENER_STATUS" == "completed" ]]; then
+elif [[ "$HFI_SUPPORTED" == "yes" && "$LISTENER_STATUS" == "completed" && "$LISTENER_READY" == "yes" ]]; then
   OVERALL="SUPPORTED_NO_EVENT_OBSERVED"
 elif [[ "$HFI_SUPPORTED" == "no" ]]; then
   OVERALL="CPU_HFI_UNSUPPORTED"
