@@ -1,14 +1,7 @@
-name: name: AlpenCat x64 Boundary Economics
+name: AlpenCat x64 Boundary Economics
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - experiment/c-fast-route-poc
-    paths:
-      - "benchmarks/x64-boundary-economics/**"
-      - "experiments/x64-boundary-economics/**"
-      - ".github/workflows/x64-boundary-economics.yml"
 
 jobs:
   economics:
