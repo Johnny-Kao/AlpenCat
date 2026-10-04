@@ -15,7 +15,8 @@ use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
 
 pub use runtime_core::{
-    BackendKind, BoundaryProfile, BoundarySnapshot, ExecutionBudget, PublishedBoundary, ResourceEpoch, WorkRange,
+    BackendKind, BoundaryProfile, BoundarySnapshot, ExecutionBudget, PublishedBoundary,
+    ResourceEpoch, WorkRange,
 };
 pub use runtime_machine::{GpuDeviceProfile, GpuVendor, HostProfile, MachineProfile};
 pub use runtime_selector::{CPU_MAX_ITEMS, SERIAL_MAX_ITEMS};
@@ -104,13 +105,11 @@ impl<'a> GpuExecutionContext<'a> {
     }
 }
 
-type GpuRangeImplementation<'a, T> = dyn for<'gpu> Fn(
-        &GpuExecutionContext<'gpu>,
-        WorkRange,
-    ) -> Result<Vec<T>, RuntimeError>
-    + Send
-    + Sync
-    + 'a;
+type GpuRangeImplementation<'a, T> =
+    dyn for<'gpu> Fn(&GpuExecutionContext<'gpu>, WorkRange) -> Result<Vec<T>, RuntimeError>
+        + Send
+        + Sync
+        + 'a;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuWorkGranularity {
@@ -147,10 +146,7 @@ impl<'a, T, F> RangeTaskImplementations<'a, T, F> {
 
     pub fn with_gpu_range<G>(mut self, gpu: G) -> Self
     where
-        G: for<'gpu> Fn(
-                &GpuExecutionContext<'gpu>,
-                WorkRange,
-            ) -> Result<Vec<T>, RuntimeError>
+        G: for<'gpu> Fn(&GpuExecutionContext<'gpu>, WorkRange) -> Result<Vec<T>, RuntimeError>
             + Send
             + Sync
             + 'a,
@@ -342,12 +338,7 @@ impl Runtime {
         T: Send,
         F: Fn(usize) -> T + Sync + Send,
     {
-        self.submit_range_task(
-            task,
-            range,
-            mode,
-            RangeTaskImplementations::new(operation),
-        )
+        self.submit_range_task(task, range, mode, RangeTaskImplementations::new(operation))
     }
 
     pub fn submit_range_task<'a, T, F>(
@@ -396,11 +387,7 @@ impl Runtime {
                             self.execute_cpu(range, &implementations.element);
                         Ok(TaskHandle {
                             task_id: task.id,
-                            decision: self.decision(
-                                backend,
-                                Some(BackendKind::Gpu),
-                                constraint,
-                            ),
+                            decision: self.decision(backend, Some(BackendKind::Gpu), constraint),
                             value,
                         })
                     } else {
@@ -424,11 +411,7 @@ impl Runtime {
                             self.execute_cpu(range, &implementations.element);
                         Ok(TaskHandle {
                             task_id: task.id,
-                            decision: self.decision(
-                                backend,
-                                Some(BackendKind::Gpu),
-                                constraint,
-                            ),
+                            decision: self.decision(backend, Some(BackendKind::Gpu), constraint),
                             value,
                         })
                     }
@@ -497,8 +480,8 @@ impl Runtime {
             return Ok(adapter);
         }
 
-        let adapter = GpuAdapter::new()
-            .map_err(|_| RuntimeError::BackendUnavailable(BackendKind::Gpu))?;
+        let adapter =
+            GpuAdapter::new().map_err(|_| RuntimeError::BackendUnavailable(BackendKind::Gpu))?;
         let _ = self.gpu.set(adapter);
         self.gpu
             .get()
@@ -532,12 +515,9 @@ mod tests {
 
         let task = TaskDefinition::new("map");
         let handle = runtime
-            .submit_map(
-                &task,
-                WorkRange::new(0, 16),
-                ExecutionMode::Auto,
-                |index| index,
-            )
+            .submit_map(&task, WorkRange::new(0, 16), ExecutionMode::Auto, |index| {
+                index
+            })
             .expect("stale boundary remains routable");
 
         assert!(handle.decision().boundary_stale);
