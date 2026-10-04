@@ -181,7 +181,8 @@ impl PublishedBoundary {
             .store(snapshot.profile.cpu_max_items, Ordering::Relaxed);
         self.resource_epoch
             .store(snapshot.resource_epoch, Ordering::Relaxed);
-        self.sequence.store(locked.wrapping_add(2), Ordering::Release);
+        self.sequence
+            .store(locked.wrapping_add(2), Ordering::Release);
     }
 }
 
