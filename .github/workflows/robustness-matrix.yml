@@ -1,9 +1,6 @@
 name: AlpenCat Robustness Matrix
 
 on:
-  push:
-    branches:
-      - validation/robustness-matrix
   workflow_dispatch:
 
 jobs:
