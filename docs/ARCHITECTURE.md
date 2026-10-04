@@ -1,4 +1,4 @@
-# AlpenCat — Current Research Direction
+# AlpenCat — Architecture and Research Direction
 
 > Updated: 2026-10-04  
 > Status: Architecture converged; native integration validation open
