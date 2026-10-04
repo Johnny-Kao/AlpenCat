@@ -1,6 +1,9 @@
 name: AlpenCat x64 Boundary Economics
 
 on:
+  push:
+    branches:
+      - validation/robustness-matrix
   workflow_dispatch:
 
 jobs:
@@ -63,8 +66,10 @@ jobs:
           }
 
           run_phase full "$FULL"
+          if (( FULL >= 3 )); then run_phase three 3; fi
           run_phase half "$HALF"
           run_phase one 1
+          run_phase oversubscribed "$(( FULL * 2 ))"
 
           HOG_PIDS=""
           cleanup() {
@@ -72,20 +77,33 @@ jobs:
           }
           trap cleanup EXIT
 
+          sha256sum /dev/zero >/dev/null 2>&1 &
+          HOG_PIDS="$!"
+          sleep 1
+          run_phase light_contended "$FULL"
+          cleanup
+          HOG_PIDS=""
+
           for _ in $(seq 1 "$FULL"); do
             sha256sum /dev/zero >/dev/null 2>&1 &
             HOG_PIDS="$HOG_PIDS $!"
           done
           sleep 1
-          run_phase contended "$FULL"
+          run_phase heavy_contended "$FULL"
           cleanup
           HOG_PIDS=""
+
+          sleep 1
+          run_phase recovery "$FULL"
 
       - name: Analyze economics
         run: |
           python3 experiments/x64-boundary-economics/analyze.py results/x64-economics \
             | tee results/x64-economics/summary.md
           cat results/x64-economics/summary.md
+          python3 experiments/x64-boundary-economics/robustness.py results/x64-economics \
+            | tee results/x64-economics/robustness.md
+          cat results/x64-economics/robustness.md
 
       - name: Upload evidence
         uses: actions/upload-artifact@v4
