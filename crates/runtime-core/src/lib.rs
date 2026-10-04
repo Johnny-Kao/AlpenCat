@@ -295,8 +295,7 @@ mod tests {
                     );
                     assert_eq!(
                         snapshot.resource_epoch,
-                        (snapshot.profile.serial_max_items as u64)
-                            ^ 0xA5A5_A5A5_A5A5_A5A5
+                        (snapshot.profile.serial_max_items as u64) ^ 0xA5A5_A5A5_A5A5_A5A5
                     );
                 }
             }));
