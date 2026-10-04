@@ -168,22 +168,13 @@ impl<'a, T, F> RangeTaskImplementations<'a, T, F> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RuntimeConfig {
     pub boundary: BoundaryProfile,
     pub execution_budget: ExecutionBudget,
     pub external_parallelism: ExternalParallelism,
 }
 
-impl Default for RuntimeConfig {
-    fn default() -> Self {
-        Self {
-            boundary: BoundaryProfile::default(),
-            execution_budget: ExecutionBudget::default(),
-            external_parallelism: ExternalParallelism::default(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct TaskHandle<T> {
