@@ -5,7 +5,9 @@
 
 use runtime_core::{BackendKind, BoundaryProfile};
 
-pub use runtime_core::{DEFAULT_CPU_MAX_ITEMS as CPU_MAX_ITEMS, DEFAULT_SERIAL_MAX_ITEMS as SERIAL_MAX_ITEMS};
+pub use runtime_core::{
+    DEFAULT_CPU_MAX_ITEMS as CPU_MAX_ITEMS, DEFAULT_SERIAL_MAX_ITEMS as SERIAL_MAX_ITEMS,
+};
 
 #[inline(always)]
 pub const fn select(
@@ -30,7 +32,10 @@ mod tests {
     fn default_boundary_routes_serial_cpu_gpu() {
         let boundary = BoundaryProfile::default();
 
-        assert_eq!(select(SERIAL_MAX_ITEMS, true, boundary), BackendKind::Serial);
+        assert_eq!(
+            select(SERIAL_MAX_ITEMS, true, boundary),
+            BackendKind::Serial
+        );
         assert_eq!(
             select(SERIAL_MAX_ITEMS + 1, true, boundary),
             BackendKind::Cpu
