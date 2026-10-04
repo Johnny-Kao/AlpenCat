@@ -8,14 +8,14 @@
 //! Revalidation is explicit and bounded; AlpenCat no longer owns continuous
 //! telemetry, an online cost model, a resource broker, or a global planner.
 
-use std::sync::{OnceLock, RwLock};
+use std::sync::OnceLock;
 
 use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
 
 pub use runtime_core::{
-    BackendKind, BoundaryProfile, BoundarySnapshot, ExecutionBudget, ResourceEpoch, WorkRange,
+    BackendKind, BoundaryProfile, BoundarySnapshot, ExecutionBudget, PublishedBoundary, ResourceEpoch, WorkRange,
 };
 pub use runtime_machine::{GpuDeviceProfile, GpuVendor, HostProfile, MachineProfile};
 pub use runtime_selector::{CPU_MAX_ITEMS, SERIAL_MAX_ITEMS};
@@ -215,7 +215,7 @@ pub struct Runtime {
     cpu: CpuAdapter,
     gpu: OnceLock<GpuAdapter>,
     resource_epoch: ResourceEpoch,
-    boundary: RwLock<BoundarySnapshot>,
+    boundary: PublishedBoundary,
     config: RuntimeConfig,
 }
 
@@ -232,12 +232,12 @@ impl Runtime {
 
     pub fn with_config(config: RuntimeConfig) -> Self {
         let resource_epoch = ResourceEpoch::new();
-        let boundary = BoundarySnapshot::new(config.boundary, resource_epoch.current());
+        let boundary = PublishedBoundary::new(config.boundary, resource_epoch.current());
         Self {
             cpu: CpuAdapter::default(),
             gpu: OnceLock::new(),
             resource_epoch,
-            boundary: RwLock::new(boundary),
+            boundary,
             config,
         }
     }
@@ -261,11 +261,9 @@ impl Runtime {
         self.resource_epoch.invalidate()
     }
 
+    #[inline]
     pub fn boundary_snapshot(&self) -> BoundarySnapshot {
-        *self
-            .boundary
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.boundary.snapshot()
     }
 
     pub fn boundary_is_stale(&self) -> bool {
@@ -276,10 +274,7 @@ impl Runtime {
     /// Publish a newly validated boundary at the current resource epoch.
     pub fn publish_boundary(&self, profile: BoundaryProfile) -> BoundarySnapshot {
         let snapshot = BoundarySnapshot::new(profile, self.resource_epoch.current());
-        *self
-            .boundary
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot;
+        self.boundary.publish(snapshot);
         snapshot
     }
 
