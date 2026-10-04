@@ -45,4 +45,3 @@ jobs:
           name: x64-hotpath-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
           path: results/x64-hotpath/
           retention-days: 30
-\n\non:\n  workflow_dispatch:\n
