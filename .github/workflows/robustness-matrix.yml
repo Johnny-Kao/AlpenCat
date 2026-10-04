@@ -1,0 +1,46 @@
+name: AlpenCat Robustness Matrix
+
+on:
+  push:
+    branches:
+      - validation/robustness-matrix
+  workflow_dispatch:
+
+jobs:
+  core-stress:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2025, macos-14]
+        sample: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Record host
+        shell: bash
+        run: |
+          echo "os=${{ matrix.os }}"
+          echo "sample=${{ matrix.sample }}"
+          uname -a || true
+          rustc -vV
+          if command -v sysctl >/dev/null 2>&1; then
+            sysctl -n machdep.cpu.brand_string 2>/dev/null || true
+            sysctl -n hw.ncpu 2>/dev/null || true
+          fi
+          if command -v lscpu >/dev/null 2>&1; then
+            lscpu || true
+          fi
+
+      - name: Stress lock-free boundary and randomized routing
+        run: cargo test -p runtime-core -p runtime-selector -- --nocapture
+
+      - name: Exercise CPU backend budgets
+        run: cargo test -p runtime-cpu-rayon -- --nocapture
