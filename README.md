@@ -4,29 +4,20 @@
 <br>
 
 [![Status: Experimental](https://img.shields.io/badge/status-experimental-orange)](./CURRENT_RESEARCH_DIRECTION.md)
-[![Research Direction](https://img.shields.io/badge/research-boundary--validity-blue)](./CURRENT_RESEARCH_DIRECTION.md)
+[![Architecture: Converged](https://img.shields.io/badge/architecture-converged-2ea44f)](./CURRENT_RESEARCH_DIRECTION.md)
+[![Validation: Native hardware](https://img.shields.io/badge/validation-native%20hardware-blue)](./docs/NATIVE_VALIDATION.md)
 [![Rust](https://img.shields.io/badge/Rust-1.87%2B-000000?logo=rust)](./Cargo.toml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-green)](#license)
 
-> **Experimental research project — direction updated 2026-10-04**
->
-> AlpenCat remains open while its architecture is being reduced through
-> measurement and falsification. Earlier adaptive-runtime work is preserved, but
-> it is no longer the current architectural commitment.
+> **Experimental systems research — architecture converged, native integration validation in progress.**
 
-AlpenCat is investigating a narrow systems question:
+AlpenCat is a lightweight runtime mechanism for keeping an execution boundary valid when available compute changes.
 
-> **How little runtime information is sufficient to keep an execution boundary
-> valid when compute is constrained?**
+It is intentionally **not** a general scheduler, continuous telemetry engine, or online performance predictor.
 
-The current focus is not a general scheduler, continuous telemetry engine, or
-online performance predictor.
+## The problem
 
-It is an **ultra-thin boundary-validity runtime**.
-
-## Current idea
-
-Applications and libraries may already have multiple equivalent paths:
+Applications and libraries often already have equivalent execution paths:
 
 ```text
 serial CPU
@@ -36,150 +27,174 @@ specialized fast path
 generic fallback
 ```
 
-The expensive mistake is not necessarily lacking another predictor. It may be
-continuing to trust a crossover boundary after the execution environment has
-changed.
+The crossover between two paths may be calibrated correctly and later become wrong when the execution environment changes.
 
-The current AlpenCat hypothesis is:
+Examples include:
+
+- effective CPU count changes;
+- CPU quota or cpuset changes;
+- co-tenant contention;
+- thermal or power-capability changes;
+- VM steal / preemption;
+- accelerator throttling.
+
+The central AlpenCat question is:
+
+> **How little runtime machinery is needed to keep a previously calibrated execution boundary trustworthy?**
+
+## Current architecture
+
+The architecture has converged through measurement and falsification to a small control path:
 
 ```text
-published boundary
+native platform transition
         |
-platform / OS state transition
+        v
+ResourceEpoch / stale
         |
-mark boundary stale
+        v
+continue using the old boundary
         |
-do nothing until relevant demand arrives
+        v
+future demand reaches the old boundary region
         |
-call reaches old crossover region
+        v
+bounded local revalidation, only when justified
         |
-localized revalidation
-        |
-publish new boundary
+        v
+publish a new boundary
 ```
 
-No global model is required in this design.
-
-## Candidate minimal core
+Candidate production core:
 
 ```text
 FastRoute
-+
-Boundary
-+
-ResourceEpoch / stale bits
-+
-LocalizedRevalidation
-+
-PlatformAdapter
++ Boundary
++ ResourceEpoch / stale
++ native transition semantics
++ near-boundary demand
++ bounded revalidation
++ conservative fallback
 ```
 
-The desired hot path remains tiny. Platform adapters should consume state that
-the kernel, OS, hardware, or driver already maintains rather than rebuilding the
-same information inside AlpenCat.
-
-Potential transition sources under study include:
-
-| Environment | Candidate source |
-| --- | --- |
-| Linux | PSI events |
-| ARM/Linux | hardware-capacity / hw-pressure mechanisms where available |
-| Android | thermal/headroom callbacks |
-| NVIDIA | throttle / limiting state |
-| Apple | thermal-state notification |
-
-These sources are not assumed to be complete or equivalent. AlpenCat only needs
-a small common invalidation contract above them.
-
-## Primary target now
-
-The immediate research target is **compute-constrained x86-64 server
-execution**.
-
-The strongest near-term question is:
-
-> When effective CPU capacity changes — fewer cores, CPU quota, co-tenant
-> contention, or related pressure — how much does the serial/parallel execution
-> boundary move, and can a tiny stale-bit + localized-revalidation mechanism
-> recover the lost performance at lower cost than continuous adaptation?
-
-Hosted GitHub Actions are being used for the algorithmic constrained-compute
-layer. Physical Intel/AMD hardware will be required later for vendor-specific
-thermal/frequency/capacity evidence.
-
-## What changed from the earlier design
-
-Earlier AlpenCat versions explored:
+Normal routing remains close to:
 
 ```text
-observe
-→ estimate
-→ plan
-→ choose
-→ execute
-→ measure
-→ learn
+load epoch
+compare cached epoch
+compare workload key with boundary
+select route
 ```
 
-That work produced useful evidence, but several directions have since been
-weakened or falsified as default mechanisms:
+No continuous telemetry or global performance model is required on the hot path.
 
-- complex global prediction;
-- periodic active probing;
-- selected-route timing as a complete validity signal;
-- eager recalibration;
-- standard PSI as a complete immediate detector;
-- raw application-cgroup PSI as a clean external-pressure detector.
+## What the experiments established
 
-The project is now intentionally trying to **remove** control-plane machinery,
-not add more.
+The current evidence supports several reductions:
 
-Historical modules such as telemetry, cost models, planners, brokers, and
-rebalancers remain in the repository as research assets and baselines.
+- **Static boundaries can become materially wrong.**
+  Under strong x64 contention, stale routing produced very large regret.
+- **A resource transition does not imply immediate recalibration.**
+  Mild capacity changes often moved the crossover little or not at all.
+- **Unbounded recalibration is too expensive.**
+  Bounded local revalidation reduced pathological search cost substantially.
+- **A single slowdown threshold is not a universal capacity classifier.**
+  Multi-runner Intel/AMD measurements showed overlap between mild and severe CPU-budget cases.
+- **Slowdown remains useful as a secondary accelerator.**
+  Strong external contention was consistently visible across the heterogeneous runner matrix.
+- **The normal epoch/stale hot path is extremely small.**
+  The measured incremental cost of a relaxed epoch check was approximately **0.016–0.514 ns/call** across eight independent x64 runners.
 
-## Research principle
+Detailed evidence and limitations are recorded in [Validation Status](./docs/VALIDATION_STATUS.md).
 
-AlpenCat is allowed to falsify itself.
+## Heterogeneous x64 validation
 
-If static routing is sufficient in the intended target regime, that is a valid
-result. If the correct design is only a few state bits around a tiny FastRoute,
-that is preferable to preserving a larger architecture.
+The current constrained-compute experiments have run across independently allocated Intel and AMD GitHub-hosted x64 systems, including:
 
-The goal is the smallest mechanism supported by evidence.
+- Intel Xeon Platinum 8370C / 8573C-class runners observed during the study;
+- AMD EPYC 7763;
+- AMD EPYC 9V45;
+- AMD EPYC 9V74.
 
-## Current documentation
+These experiments validate the **mechanism and economics** of the boundary-validity design.
 
-Start here:
+They do **not** yet establish vendor-native event delivery. That is the current validation phase.
+
+## Native validation phase
+
+The remaining architecture gate is:
+
+```text
+real hardware / OS capacity event
+        |
+        v
+platform adapter
+        |
+        v
+AlpenCat ResourceEpoch changes
+        |
+        v
+bounded runtime response
+```
+
+Intel Hardware Feedback Interface (HFI) is the leading first target because Linux can relay CPU performance / efficiency capability changes to userspace through thermal Generic Netlink when `CONFIG_INTEL_HFI_THERMAL` is enabled.
+
+For hardware vendors, server OEMs, research labs, and platform teams:
+
+- [Native validation protocol](./docs/NATIVE_VALIDATION.md)
+- [One-command validation probe](./tools/native-validation/)
+
+The probe is deliberately independent from the AlpenCat runtime. A partner can run it on suitable physical hardware and return the generated evidence bundle without integrating AlpenCat first.
+
+## Research history
+
+Earlier AlpenCat work explored a much broader runtime architecture:
+
+```text
+observe -> estimate -> plan -> choose -> execute -> measure -> learn
+```
+
+That work was useful for falsification, but the current project is deliberately removing machinery rather than preserving it.
+
+Historical telemetry, planners, cost models, brokers, rebalancers, CPU/GPU experiments, and earlier architecture records remain in the repository for traceability.
+
+See:
 
 - [Current research direction](./CURRENT_RESEARCH_DIRECTION.md)
+- [Validation status](./docs/VALIDATION_STATUS.md)
 - [Historical v0.1 architecture](./docs/HISTORICAL_ARCHITECTURE_V0_1.md)
 
-Historical validation and milestone documents remain under `docs/` for
-traceability.
+## Reproducible benchmarks
+
+The repository includes the x64 experiments used to test the converged architecture:
+
+- `benchmarks/x64-boundary-economics/`
+- `experiments/x64-boundary-economics/`
+- `benchmarks/x64-hotpath-overhead/`
+
+The benchmarks are evidence tools, not production APIs.
 
 ## Project status
 
-AlpenCat is experimental and not recommended for production-critical workloads.
+**Architecture exploration is effectively complete. Native integration validation remains open.**
 
-APIs, modules, and even the surviving architecture may change while the current
-hypothesis is tested.
+AlpenCat is still experimental and is not recommended for production-critical workloads.
 
-The repository remains public specifically so that benchmarks, negative results,
-architectural reductions, and portability evidence remain inspectable.
+The next milestone is not a larger scheduler. It is a verified native adapter path and an implementation-level end-to-end measurement on physical hardware.
 
-## Contributing
+## Contributing / validation partners
 
-Useful contributions currently include:
+High-value contributions now include:
 
-- reproducible constrained x86-64 server measurements;
-- Intel / AMD physical-hardware evidence;
-- CPU quota / cgroup / contention experiments;
-- crossover-movement datasets;
-- low-overhead OS or hardware state-transition mechanisms;
-- falsification of the current boundary-validity hypothesis.
+- physical Intel HFI measurements;
+- AMD / KVM / cpuset native transition evidence;
+- server-OEM reproduction;
+- hardware/OS event delivery latency;
+- native-adapter correctness;
+- final hot-path measurements against exact production code;
+- evidence that falsifies or further simplifies the current design.
 
-A contribution does not need to make AlpenCat more complex. Evidence that lets
-the project remove machinery is equally valuable.
+Evidence that lets AlpenCat remove logic is considered a successful contribution.
 
 ## License
 

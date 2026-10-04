@@ -1,0 +1,95 @@
+name: AlpenCat x64 Boundary Economics
+
+on:
+  workflow_dispatch:
+
+jobs:
+  economics:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Record runner metadata
+        run: |
+          mkdir -p results/x64-economics
+          {
+            echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "sha=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "runner_os=${{ matrix.os }}"
+            echo "sample=${{ matrix.sample }}"
+            echo "runner_name=${RUNNER_NAME:-unknown}"
+            uname -a
+            lscpu
+            echo "--- /proc/cpuinfo model ---"
+            grep -m1 -E 'vendor_id|model name|cpu family|model' /proc/cpuinfo || true
+            echo "--- cgroup cpu.max ---"
+            cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
+            echo "--- affinity ---"
+            taskset -pc $$ || true
+            echo "nproc=$(nproc)"
+          } > results/x64-economics/runner_metadata.txt
+
+      - name: Build benchmark
+        run: |
+          cargo build --release --manifest-path benchmarks/x64-boundary-economics/Cargo.toml
+
+      - name: Run capacity matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=benchmarks/x64-boundary-economics/target/release/x64-boundary-economics
+          CPU_COUNT=$(nproc)
+          FULL=$CPU_COUNT
+          if (( FULL > 4 )); then FULL=4; fi
+          HALF=$(( FULL / 2 ))
+          if (( HALF < 1 )); then HALF=1; fi
+
+          run_phase() {
+            local phase="$1"
+            local threads="$2"
+            echo "phase=$phase threads=$threads"
+            ALPENCAT_ECON_PHASE="$phase" RAYON_NUM_THREADS="$threads" \
+              "$BIN" > "results/x64-economics/${phase}.csv"
+          }
+
+          run_phase full "$FULL"
+          run_phase half "$HALF"
+          run_phase one 1
+
+          HOG_PIDS=""
+          cleanup() {
+            for p in $HOG_PIDS; do kill "$p" 2>/dev/null || true; done
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 "$FULL"); do
+            sha256sum /dev/zero >/dev/null 2>&1 &
+            HOG_PIDS="$HOG_PIDS $!"
+          done
+          sleep 1
+          run_phase contended "$FULL"
+          cleanup
+          HOG_PIDS=""
+
+      - name: Analyze economics
+        run: |
+          python3 experiments/x64-boundary-economics/analyze.py results/x64-economics \
+            | tee results/x64-economics/summary.md
+          cat results/x64-economics/summary.md
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: x64-boundary-economics-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
+          path: results/x64-economics/
+          retention-days: 30
