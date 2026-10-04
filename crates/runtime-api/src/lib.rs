@@ -105,11 +105,10 @@ impl<'a> GpuExecutionContext<'a> {
     }
 }
 
-type GpuRangeImplementation<'a, T> =
-    dyn for<'gpu> Fn(&GpuExecutionContext<'gpu>, WorkRange) -> Result<Vec<T>, RuntimeError>
-        + Send
-        + Sync
-        + 'a;
+type GpuRangeImplementation<'a, T> = dyn for<'gpu> Fn(&GpuExecutionContext<'gpu>, WorkRange) -> Result<Vec<T>, RuntimeError>
+    + Send
+    + Sync
+    + 'a;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GpuWorkGranularity {
