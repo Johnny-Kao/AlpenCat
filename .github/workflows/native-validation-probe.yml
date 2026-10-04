@@ -51,5 +51,6 @@ jobs:
           test -f "$DIR/dmesg_after.txt"
           test -f "$DIR/thermal_events.jsonl"
           test -s "$DIR/listener.stderr"
-          grep -q '^transition_note=CI smoke test "$DIR/summary.txt"
+          grep -q '^transition_note=CI smoke test          test -n "$(find . -maxdepth 1 -name 'alpencat-native-validation-*.tar.gz' -print -quit)"
+ "$DIR/summary.txt"
           test -n "$(find . -maxdepth 1 -name 'alpencat-native-validation-*.tar.gz' -print -quit)"
