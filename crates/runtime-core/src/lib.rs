@@ -4,7 +4,8 @@
 //! a resource epoch used to invalidate confidence in that boundary, and a few
 //! execution types shared by the routing and backend layers.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::hint::spin_loop;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 pub const DEFAULT_SERIAL_MAX_ITEMS: usize = 1_024;
 pub const DEFAULT_CPU_MAX_ITEMS: usize = 262_144;
@@ -67,7 +68,6 @@ impl Default for ExecutionBudget {
     }
 }
 
-/// Published crossover points used by the fast routing path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundaryProfile {
     pub serial_max_items: usize,
@@ -92,7 +92,6 @@ impl Default for BoundaryProfile {
     }
 }
 
-/// A boundary together with the resource epoch at which it was published.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundarySnapshot {
     pub profile: BoundaryProfile,
@@ -105,6 +104,84 @@ impl BoundarySnapshot {
             profile,
             resource_epoch,
         }
+    }
+}
+
+/// Lock-free read / rare-write publication of a boundary.
+///
+/// Readers use a tiny sequence check so a concurrent publication cannot expose
+/// a mixed pair of crossover values. Publication is intentionally rare and is
+/// expected only after bounded revalidation.
+#[derive(Debug)]
+pub struct PublishedBoundary {
+    sequence: AtomicU64,
+    serial_max_items: AtomicUsize,
+    cpu_max_items: AtomicUsize,
+    resource_epoch: AtomicU64,
+}
+
+impl PublishedBoundary {
+    pub const fn new(profile: BoundaryProfile, resource_epoch: u64) -> Self {
+        Self {
+            sequence: AtomicU64::new(0),
+            serial_max_items: AtomicUsize::new(profile.serial_max_items),
+            cpu_max_items: AtomicUsize::new(profile.cpu_max_items),
+            resource_epoch: AtomicU64::new(resource_epoch),
+        }
+    }
+
+    #[inline]
+    pub fn snapshot(&self) -> BoundarySnapshot {
+        loop {
+            let before = self.sequence.load(Ordering::Acquire);
+            if before & 1 != 0 {
+                spin_loop();
+                continue;
+            }
+
+            let snapshot = BoundarySnapshot::new(
+                BoundaryProfile::new(
+                    self.serial_max_items.load(Ordering::Relaxed),
+                    self.cpu_max_items.load(Ordering::Relaxed),
+                ),
+                self.resource_epoch.load(Ordering::Relaxed),
+            );
+
+            let after = self.sequence.load(Ordering::Acquire);
+            if before == after {
+                return snapshot;
+            }
+        }
+    }
+
+    pub fn publish(&self, snapshot: BoundarySnapshot) {
+        let locked = loop {
+            let current = self.sequence.load(Ordering::Acquire);
+            if current & 1 != 0 {
+                spin_loop();
+                continue;
+            }
+            if self
+                .sequence
+                .compare_exchange(
+                    current,
+                    current.wrapping_add(1),
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                break current;
+            }
+        };
+
+        self.serial_max_items
+            .store(snapshot.profile.serial_max_items, Ordering::Relaxed);
+        self.cpu_max_items
+            .store(snapshot.profile.cpu_max_items, Ordering::Relaxed);
+        self.resource_epoch
+            .store(snapshot.resource_epoch, Ordering::Relaxed);
+        self.sequence.store(locked.wrapping_add(2), Ordering::Release);
     }
 }
 
@@ -160,8 +237,17 @@ mod tests {
     }
 
     #[test]
-    fn default_boundary_is_ordered() {
-        let boundary = BoundaryProfile::default();
-        assert!(boundary.serial_max_items < boundary.cpu_max_items);
+    fn published_boundary_round_trips_atomically() {
+        let boundary = PublishedBoundary::new(BoundaryProfile::new(8, 32), 3);
+        assert_eq!(
+            boundary.snapshot(),
+            BoundarySnapshot::new(BoundaryProfile::new(8, 32), 3)
+        );
+
+        boundary.publish(BoundarySnapshot::new(BoundaryProfile::new(16, 64), 4));
+        assert_eq!(
+            boundary.snapshot(),
+            BoundarySnapshot::new(BoundaryProfile::new(16, 64), 4)
+        );
     }
 }
