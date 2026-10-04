@@ -1,9 +1,6 @@
 name: AlpenCat x64 Hot Path Overhead
 
 on:
-  push:
-    branches:
-      - validation/robustness-matrix
   workflow_dispatch:
 
 jobs:
