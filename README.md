@@ -112,7 +112,7 @@ The repository intentionally keeps only the evidence needed for the converged de
 - `benchmarks/x64-hotpath-overhead/`
 - `tools/native-validation/`
 
-The hot-path benchmark now imports the production `runtime-core` / `runtime-selector` implementation directly. A fresh production-code matrix run is the next overhead checkpoint.
+The hot-path benchmark imports the production `runtime-core` / `runtime-selector` implementation directly. The final-main x64 matrix passed; see [Validation Status](./docs/VALIDATION_STATUS.md).
 
 ## Project status
 
@@ -130,7 +130,8 @@ Still open:
 
 - real native hardware event delivery;
 - adapter -> `ResourceEpoch` end-to-end validation;
-- production-code hot-path matrix;
+- physical-server native-event validation;
+- adapter -> `ResourceEpoch` end-to-end validation;
 - physical-server end-to-end workload validation.
 
 AlpenCat remains experimental and is not recommended for production-critical workloads.

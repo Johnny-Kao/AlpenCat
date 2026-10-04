@@ -35,11 +35,15 @@ Clone the repository and run:
 sudo ./tools/native-validation/alpencat-native-probe.sh
 ```
 
-Optional listener duration:
+Recommended one-shot command:
 
 ```bash
-sudo ./tools/native-validation/alpencat-native-probe.sh --listen-seconds 300
+sudo ./tools/native-validation/alpencat-native-probe.sh \\
+  --listen-seconds 300 \\
+  --transition-note "approved platform transition description"
 ```
+
+The probe performs compiler/environment checks first. **Do not trigger the platform change until `READY_FOR_TRANSITION` is printed.** If prerequisites are missing, the hardware transition has not been consumed.
 
 The script does **not** modify CPU power limits, BIOS settings, SST profiles, or thermal controls.
 
@@ -69,17 +73,22 @@ This keeps the validation safe, auditable, and vendor-controlled.
 
 ## Expected output
 
-The script creates a directory and a compressed evidence bundle containing:
+The script creates a directory and compressed evidence bundle containing:
 
 ```text
 summary.txt
-system.txt
+manifest.txt
+platform_before.txt
+platform_after.txt
 cpuid_hfi.txt
 kernel_config.txt
-dmesg_hfi.txt
+dmesg_before.txt
+dmesg_after.txt
 thermal_events.jsonl
 listener.stderr
 ```
+
+The before/after platform snapshots include OS/kernel, CPU topology, virtualization, non-unique DMI model/BIOS fields, cgroup/cpuset state, SMT, Intel P-state/cpufreq state, thermal zones, relevant modules, and tool availability. Unique machine identifiers such as DMI serial number/UUID are intentionally not collected.
 
 A successful event looks conceptually like:
 
@@ -110,7 +119,7 @@ L3 and L4 are AlpenCat integration tests and remain under project control.
 
 ## Data requested from validation partners
 
-The generated evidence bundle is sufficient.
+The generated evidence bundle is designed to be sufficient for a one-shot L1/L2 analysis, including negative results. A `SUPPORTED_NO_EVENT_OBSERVED` result can therefore be separated from compiler, kernel-interface, virtualization, or listener-readiness failures without asking the partner to repeat the transition.
 
 No proprietary BIOS configuration, firmware source, BMC credentials, or internal tooling is required.
 

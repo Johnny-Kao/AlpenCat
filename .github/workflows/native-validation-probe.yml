@@ -15,7 +15,11 @@ on:
 
 jobs:
   build-and-smoke-test:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +29,27 @@ jobs:
 
       - name: Build CPUID helper
         run: |
-          cc -O2 -Wall -Wextra -Werror             tools/native-validation/cpuid_hfi.c             -o /tmp/cpuid_hfi
+          cc -O2 -Wall -Wextra -Werror tools/native-validation/cpuid_hfi.c -o /tmp/cpuid_hfi
           /tmp/cpuid_hfi
 
       - name: Build thermal event listener
         run: |
-          cc -O2 -Wall -Wextra -Werror             tools/native-validation/thermal_event_listener.c             -o /tmp/thermal_event_listener
+          cc -O2 -Wall -Wextra -Werror tools/native-validation/thermal_event_listener.c -o /tmp/thermal_event_listener
 
       - name: Smoke-test passive probe
         run: |
-          tools/native-validation/alpencat-native-probe.sh --listen-seconds 1
+          tools/native-validation/alpencat-native-probe.sh --listen-seconds 1 --transition-note "CI smoke test"
+          DIR="$(find . -maxdepth 1 -type d -name 'alpencat-native-validation-*' -print -quit)"
+          test -n "$DIR"
+          test -s "$DIR/summary.txt"
+          test -s "$DIR/manifest.txt"
+          test -s "$DIR/platform_before.txt"
+          test -s "$DIR/platform_after.txt"
+          test -f "$DIR/cpuid_hfi.txt"
+          test -s "$DIR/kernel_config.txt"
+          test -f "$DIR/dmesg_before.txt"
+          test -f "$DIR/dmesg_after.txt"
+          test -f "$DIR/thermal_events.jsonl"
+          test -s "$DIR/listener.stderr"
+          grep -q '^transition_note=CI smoke test$' "$DIR/summary.txt"
           test -n "$(find . -maxdepth 1 -name 'alpencat-native-validation-*.tar.gz' -print -quit)"

@@ -28,6 +28,29 @@
 #define THERMAL_GENL_EVENT_GROUP_NAME "event"
 #endif
 
+/*
+ * CPU-capability notifications were added to the thermal Generic Netlink UAPI
+ * after the original family was introduced. Some enterprise distributions can
+ * run a supporting kernel while shipping older userspace UAPI headers. Keep
+ * the probe buildable in that environment by pinning the stable UAPI IDs from
+ * include/uapi/linux/thermal.h.
+ */
+#ifndef THERMAL_GENL_ATTR_CPU_CAPABILITY
+#define THERMAL_GENL_ATTR_CPU_CAPABILITY 20
+#endif
+#ifndef THERMAL_GENL_ATTR_CPU_CAPABILITY_ID
+#define THERMAL_GENL_ATTR_CPU_CAPABILITY_ID 21
+#endif
+#ifndef THERMAL_GENL_ATTR_CPU_CAPABILITY_PERFORMANCE
+#define THERMAL_GENL_ATTR_CPU_CAPABILITY_PERFORMANCE 22
+#endif
+#ifndef THERMAL_GENL_ATTR_CPU_CAPABILITY_EFFICIENCY
+#define THERMAL_GENL_ATTR_CPU_CAPABILITY_EFFICIENCY 23
+#endif
+#ifndef THERMAL_GENL_EVENT_CPU_CAPABILITY_CHANGE
+#define THERMAL_GENL_EVENT_CPU_CAPABILITY_CHANGE 14
+#endif
+
 static int add_attr(struct nlmsghdr *nlh, size_t maxlen, int type,
                     const void *data, size_t len) {
     size_t attr_len = NLA_HDRLEN + len;
