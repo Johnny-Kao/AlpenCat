@@ -1,13 +1,7 @@
-name: name: AlpenCat x64 Hot Path Overhead
+name: AlpenCat x64 Hot Path Overhead
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - experiment/c-fast-route-poc
-    paths:
-      - "benchmarks/x64-hotpath-overhead/**"
-      - ".github/workflows/x64-hotpath-overhead.yml"
 
 jobs:
   overhead:
