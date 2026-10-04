@@ -86,7 +86,7 @@ A successful event looks conceptually like:
 ```json
 {
   "timestamp": "2026-10-04T12:34:56.123456789Z",
-  "event_cmd": 13,
+  "event": "THERMAL_GENL_EVENT_CPU_CAPABILITY_CHANGE",
   "cpu_capabilities": [
     {"cpu": 17, "performance": 812, "efficiency": 921}
   ]
