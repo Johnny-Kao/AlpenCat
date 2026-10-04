@@ -69,6 +69,7 @@ distributions = ["uniform", "near", "small", "large", "bimodal"]
 seeds = list(range(1, 33))
 calls_per_episode = 4096
 records = []
+localized_records = []
 
 for phase_name, rows in phases.items():
     bounded_boundary = summary["phases"][phase_name]["bounded_policy"]["boundary"]
@@ -124,7 +125,55 @@ for phase_name, rows in phases.items():
         }
         records.append(record)
 
-(root / "robustness.json").write_text(json.dumps(records, indent=2) + "\n")
+        tested_points = set(summary["phases"][phase_name]["bounded_policy"]["tested_points"])
+        local_wins = local_ties = local_losses = 0
+        local_ratios = []
+        for seed in seeds:
+            rng = random.Random((seed << 16) ^ sum(map(ord, phase_name)) ^ sum(map(ord, distribution)))
+            static_loss = 0.0
+            localized_loss = 0.0
+            for _ in range(calls_per_episode):
+                idx = choose_index(rng, distribution)
+                row = rows[idx]
+                static = regret_ns(row, baseline_boundary)
+                static_loss += static
+                if row["n"] in tested_points:
+                    localized = 0.0
+                else:
+                    localized = static
+                localized_loss += localized
+
+            if localized_loss + 1e-9 < static_loss:
+                local_wins += 1
+            elif static_loss + 1e-9 < localized_loss:
+                local_losses += 1
+            else:
+                local_ties += 1
+
+            if static_loss > 0:
+                local_ratios.append(localized_loss / static_loss)
+            elif localized_loss == 0:
+                local_ratios.append(1.0)
+            else:
+                local_ratios.append(math.inf)
+
+        local_finite = [x for x in local_ratios if math.isfinite(x)]
+        localized_records.append({
+            "phase": phase_name,
+            "distribution": distribution,
+            "episodes": len(seeds),
+            "calls_per_episode": calls_per_episode,
+            "wins": local_wins,
+            "ties": local_ties,
+            "losses": local_losses,
+            "median_loss_ratio": statistics.median(local_finite) if local_finite else None,
+            "tested_points": sorted(tested_points),
+        })
+
+(root / "robustness.json").write_text(json.dumps({
+    "global_bounded": records,
+    "localized_no_extrapolation": localized_records,
+}, indent=2) + "\n")
 
 print("# Randomized workload replay")
 print()
@@ -142,5 +191,18 @@ for r in records:
     )
 
 loss_cases = [r for r in records if r["losses"] > 0]
+local_loss_cases = [r for r in localized_records if r["losses"] > 0]
 print()
-print(f"Distributions with any bounded-policy regression: {len(loss_cases)}/{len(records)}")
+print(f"Distributions with any global bounded-policy regression: {len(loss_cases)}/{len(records)}")
+print(f"Distributions with any localized-policy regression: {len(local_loss_cases)}/{len(localized_records)}")
+print()
+print("## Localized evidence, no extrapolation")
+print()
+print("| Phase | Distribution | Win/Tie/Loss | Median localized/static loss |")
+print("|---|---|---:|---:|")
+for r in localized_records:
+    ratio = "n/a" if r["median_loss_ratio"] is None else f"{r['median_loss_ratio']:.3f}x"
+    print(
+        f"| {r['phase']} | {r['distribution']} | "
+        f"{r['wins']}/{r['ties']}/{r['losses']} | {ratio} |"
+    )
