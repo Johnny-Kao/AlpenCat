@@ -1,162 +1,156 @@
 # AlpenCat — Current Research Direction
 
 > Updated: 2026-10-04  
-> Status: Experimental research project
+> Status: Architecture converged; native integration validation open
 
-AlpenCat is currently investigating a deliberately narrow question:
+## Current research statement
 
-> **How little runtime information is sufficient to keep an execution boundary valid when compute is constrained?**
+AlpenCat asks:
 
-The project is no longer centered on continuous telemetry, online cost modeling,
-global prediction, or general-purpose scheduling.
+> **Can execution boundaries remain valid under changing compute conditions using only native state transitions, a tiny stale/epoch mechanism, and bounded local revalidation — without continuous performance prediction?**
 
-## Current target
+The architecture-exploration phase is now effectively complete.
 
-AlpenCat targets workloads where:
+The remaining work is validation of real platform adapters and exact implementation overhead.
 
-- multiple equivalent execution paths already exist;
-- choosing the wrong path wastes scarce compute;
-- control overhead must be much smaller than the work being protected;
-- execution conditions can change after a boundary was calibrated;
-- the OS, kernel, driver, or platform may already expose useful state transitions.
-
-The current primary research environment is constrained x86-64 server execution,
-especially serial-vs-parallel CPU routing under limited core budgets,
-contention, quota changes, and related resource pressure.
-
-CPU/GPU routing remains relevant, but it is no longer the only or primary
-definition of the problem.
-
-## Current hypothesis
-
-The runtime may not need to predict full backend performance.
-
-A much smaller mechanism may be sufficient:
+## Converged architecture
 
 ```text
-published route boundary
+native transition semantics
         |
-platform / OS state transition
+        v
+ResourceEpoch / stale
         |
-mark affected boundary stale
+        +---- normal calls remain on FastRoute
         |
-no immediate recalibration
+        v
+future near-boundary demand
         |
-future call arrives near old boundary
+        v
+bounded revalidation when justified
         |
-localized revalidation
-        |
-publish new boundary
+        v
+publish updated boundary
 ```
 
-The upper layer should ideally consume only small state-change information such
-as:
-
-```text
-CPU_CAPACITY_CHANGED
-MEMORY_PRESSURE_CHANGED
-GPU_CAPACITY_CHANGED
-THERMAL_STATE_CHANGED
-```
-
-Platform adapters may derive those transitions differently.
-
-Examples currently under study:
-
-- Linux: PSI events;
-- ARM/Linux: hardware-capacity / hw-pressure mechanisms where available;
-- Android: thermal-state/headroom callbacks;
-- NVIDIA: limiting/throttle state;
-- Apple: thermal-state notifications.
-
-The platform-specific signal is not itself AlpenCat's contribution.
-
-## Candidate contribution
-
-If the current hypothesis survives falsification, AlpenCat's contribution is:
-
-1. **Boundary validity**
-   - maintain whether an execution crossover is still trustworthy.
-
-2. **Localized revalidation**
-   - re-measure only around the previous crossover rather than rebuilding a
-     global performance model.
-
-3. **Minimal control plane**
-   - keep the hot routing path tiny and leave the control plane dormant until a
-     real state transition and relevant demand occur.
-
-The current research framing is therefore:
-
-> **Can existing hardware/OS resource-state transitions be used only as
-> invalidation events, allowing execution routing to adapt without continuous
-> performance prediction?**
-
-## Current minimal architecture candidate
+Minimal candidate:
 
 ```text
 FastRoute
-+
-Boundary
-+
-ResourceEpoch / stale bits
-+
-LocalizedRevalidation
-+
-PlatformAdapter
++ Boundary
++ ResourceEpoch / stale
++ optional transition direction / magnitude
++ near-boundary demand
++ optional routed-call slowdown accelerator
++ bounded revalidation
++ conservative fallback
++ thin platform adapters
 ```
 
-Research components such as continuous telemetry, global cost models,
-`RecentUseRate`, `RecalibrationEconomics`, active probing, and adaptive
-predictors are not assumed to belong in the final runtime.
+## What has been removed as a default requirement
 
-They remain useful as historical experiments, baselines, and falsification
-evidence.
+The current evidence does not justify placing the following on the normal runtime path:
+
+- continuous telemetry;
+- periodic active probing;
+- global cost prediction;
+- online ML;
+- a general-purpose scheduler;
+- eager recalibration after every resource transition;
+- unbounded crossover search;
+- a universal fixed slowdown classifier.
+
+These may remain useful as research baselines, but they are not part of the current architectural commitment.
+
+## Core findings
+
+### 1. Boundary invalidation is real
+
+Controlled x64 experiments demonstrated that a previously correct serial/parallel crossover can move substantially under strong contention or severe capacity loss.
+
+### 2. Invalidation must be lazy
+
+Mild capacity changes frequently produced little or no boundary movement. Therefore:
+
+```text
+resource transition != immediate recalibration
+```
+
+The transition should first invalidate confidence, not automatically spend measurement budget.
+
+### 3. Revalidation must be bounded
+
+Full outward crossover search becomes economically poor when the parallel route disappears.
+
+A bounded neighborhood search plus conservative fallback sharply reduced this pathological cost.
+
+### 4. Revalidation spending must also be lazy
+
+Even bounded revalidation can be wasteful when stale-boundary regret is tiny.
+
+The control plane should remain dormant until relevant demand makes the check economically meaningful.
+
+### 5. Route slowdown is secondary evidence
+
+Across heterogeneous Intel/AMD runners, heavy contention produced a strong slowdown signal.
+
+However, mild and severe CPU-budget reductions overlapped. A fixed slowdown threshold therefore cannot be the primary universal classifier.
+
+Native transition semantics should be used first when the platform exposes them.
+
+### 6. The hot path remains lightweight
+
+A dedicated microbenchmark across eight independent x64 runners measured the normal relaxed epoch-check path at approximately:
+
+```text
++0.016 to +0.514 ns / routed call
+```
+
+This supports retaining a tiny resource-epoch check in the normal FastRoute.
+
+## Current validation boundary
+
+Completed or provisionally passed:
+
+- problem existence;
+- stale-boundary regret;
+- lazy invalidation;
+- bounded revalidation;
+- revalidation economics;
+- heterogeneous Intel/AMD x64 mechanism testing;
+- normal hot-path lightness;
+- control-policy convergence.
+
+Still open:
+
+- real hardware/OS event -> adapter;
+- adapter -> ResourceEpoch end-to-end delivery;
+- event latency and stale-window measurement;
+- exact production implementation overhead;
+- vendor/platform coverage.
+
+## Leading native adapter: Intel HFI
+
+Linux `CONFIG_INTEL_HFI_THERMAL` can relay CPU performance and efficiency capability updates to userspace through the thermal Generic Netlink event family.
+
+The first native proof should establish:
+
+```text
+physical capability transition
+-> Intel HFI
+-> Linux thermal Generic Netlink
+-> userspace validation probe
+-> AlpenCat ResourceEpoch
+-> bounded routing response
+```
+
+The external validation protocol is documented in:
+
+- `docs/NATIVE_VALIDATION.md`
+- `tools/native-validation/`
 
 ## Research discipline
 
-The project explicitly allows negative results.
+AlpenCat continues to prefer the smallest surviving mechanism.
 
-Possible outcomes include:
-
-- the minimal boundary-validity runtime is sufficient;
-- a small fallback signal is required;
-- static routing is already optimal enough for the target regime;
-- some earlier adaptive machinery is unnecessary and should be removed.
-
-A smaller surviving architecture is considered progress.
-
-## Immediate research program
-
-The next evidence program focuses on constrained x86-64 execution:
-
-- 4 → 2 → 1 effective CPU budget;
-- CPU quota transitions;
-- external co-tenant contention;
-- serial-vs-parallel crossover movement;
-- stale static-boundary regret;
-- localized recovery cost;
-- comparison against static and oracle references.
-
-Hosted GitHub Actions are useful for this algorithmic layer because they provide
-repeatable constrained Linux/x64 environments.
-
-They do **not** establish vendor-specific Intel/AMD thermal, frequency, or
-hardware-pressure behavior. Those require physical or explicitly identified
-hardware later.
-
-## Historical architecture
-
-Earlier AlpenCat work explored a much broader adaptive-runtime architecture:
-telemetry, online cost models, planners, brokers, rebalancers, CPU/GPU routing,
-and learned selection.
-
-That work is preserved as research history and evidence. It should not be read
-as the current architectural commitment.
-
-See:
-
-- `docs/HISTORICAL_ARCHITECTURE_V0_1.md`
-- historical validation and experiment records under `docs/`
-
-The repository remains open while the research direction evolves.
+The next phase should validate the converged design, not reopen scheduler architecture unless native integration evidence forces that change.
