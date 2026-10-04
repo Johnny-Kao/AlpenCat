@@ -175,7 +175,6 @@ pub struct RuntimeConfig {
     pub external_parallelism: ExternalParallelism,
 }
 
-
 #[derive(Debug)]
 pub struct TaskHandle<T> {
     task_id: &'static str,
