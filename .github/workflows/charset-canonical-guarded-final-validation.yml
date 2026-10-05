@@ -1,0 +1,44 @@
+name: charset canonical guarded final validation
+
+on:
+  push:
+    branches:
+      - research/charset-normalizer-e2e-baseline
+    paths:
+      - ".github/workflows/charset-canonical-guarded-final-validation.yml"
+      - "experiments/charset-normalizer-e2e-baseline/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: chardet/test-data
+          path: test-data
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: Ousret/char-dataset
+          ref: master
+          path: char-dataset
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --no-cache-dir numpy scikit-learn requests warcio
+      - name: Validate guarded canonical pipeline
+        env:
+          PAIR_A: utf-8
+          PAIR_B: utf-8-sig
+          PYTHONHASHSEED: "0"
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        run: python experiments/charset-normalizer-e2e-baseline/charset_canonical_guarded_final_validation.py
