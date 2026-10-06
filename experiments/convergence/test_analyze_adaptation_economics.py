@@ -86,6 +86,10 @@ class AdaptationEconomicsTests(unittest.TestCase):
         self.assertEqual(sequence, ["Serial", "Cpu", "Serial"])
         self.assertEqual(switches, 2)
 
+    def test_nonnumeric_csv_fields_are_preserved(self):
+        self.assertEqual(MODULE.finite_or_none("Published"), "Published")
+        self.assertIsNone(MODULE.finite_or_none(math.inf))
+
     def test_preference_consistency_uses_paired_samples(self):
         row = {
             "record_type": "point",
