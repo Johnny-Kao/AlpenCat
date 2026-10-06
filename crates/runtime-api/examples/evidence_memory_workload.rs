@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::hint::black_box;
 use std::sync::Arc;
@@ -125,6 +126,74 @@ fn measure(
     }
 }
 
+fn measure_interleaved(
+    runtime: &Runtime,
+    task: &TaskDefinition,
+    input: &Arc<Vec<u64>>,
+    n: usize,
+    repeats: usize,
+) -> (Measurement, Measurement) {
+    let mut serial_samples = Vec::with_capacity(repeats);
+    let mut cpu_samples = Vec::with_capacity(repeats);
+    let mut serial_backend = None;
+    let mut cpu_backend = None;
+    let mut serial_checksum = None;
+    let mut cpu_checksum = None;
+
+    for repeat in 0..repeats {
+        let modes = if repeat % 2 == 0 {
+            [ExecutionMode::Serial, ExecutionMode::Cpu]
+        } else {
+            [ExecutionMode::Cpu, ExecutionMode::Serial]
+        };
+
+        for mode in modes {
+            let start = Instant::now();
+            let (backend, values) = execute(runtime, task, input, n, mode);
+            let elapsed = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+            black_box(values.last().copied().unwrap_or_default());
+            let sum = checksum(&values);
+
+            match mode {
+                ExecutionMode::Serial => {
+                    if let Some(expected) = serial_backend {
+                        assert_eq!(backend, expected, "serial backend changed across pairs");
+                    } else {
+                        serial_backend = Some(backend);
+                        serial_checksum = Some(sum);
+                    }
+                    assert_eq!(Some(sum), serial_checksum, "serial output changed across pairs");
+                    serial_samples.push(elapsed);
+                }
+                ExecutionMode::Cpu => {
+                    if let Some(expected) = cpu_backend {
+                        assert_eq!(backend, expected, "CPU backend changed across pairs");
+                    } else {
+                        cpu_backend = Some(backend);
+                        cpu_checksum = Some(sum);
+                    }
+                    assert_eq!(Some(sum), cpu_checksum, "CPU output changed across pairs");
+                    cpu_samples.push(elapsed);
+                }
+                ExecutionMode::Gpu | ExecutionMode::Auto => unreachable!(),
+            }
+        }
+    }
+
+    (
+        Measurement {
+            samples_ns: serial_samples,
+            actual_backend: serial_backend.unwrap_or(BackendKind::Serial),
+            checksum: serial_checksum.unwrap_or_default(),
+        },
+        Measurement {
+            samples_ns: cpu_samples,
+            actual_backend: cpu_backend.unwrap_or(BackendKind::Serial),
+            checksum: cpu_checksum.unwrap_or_default(),
+        },
+    )
+}
+
 fn main() {
     let regime = env::var("ALPENCAT_REGIME").unwrap_or_else(|_| "baseline-full".to_string());
     let repeats = env::var("ALPENCAT_REPEATS")
@@ -155,10 +224,8 @@ fn main() {
 
     let mut route_rows = Vec::new();
     for n in SIZES {
-        let serial = measure(&runtime, &task, &input, n, ExecutionMode::Serial, repeats);
+        let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, repeats);
         assert_eq!(serial.actual_backend, BackendKind::Serial);
-
-        let cpu = measure(&runtime, &task, &input, n, ExecutionMode::Cpu, repeats);
         let cpu_available = cpu.actual_backend == BackendKind::Cpu;
         let equivalent = cpu_available.then_some(serial.checksum == cpu.checksum);
         if let Some(false) = equivalent {
@@ -193,16 +260,24 @@ fn main() {
     } else {
         runtime.invalidate_resources();
         let start = Instant::now();
+        let mut paired_costs: HashMap<usize, (Option<u64>, Option<u64>)> = HashMap::new();
         let outcome = runtime.revalidate_serial_cpu(
             BoundedRevalidationConfig::new(revalidation_points, SIZES[0], SIZES[SIZES.len() - 1]),
             |n, backend| {
-                let mode = match backend {
-                    BackendKind::Serial => ExecutionMode::Serial,
-                    BackendKind::Cpu => ExecutionMode::Cpu,
+                let costs = paired_costs.entry(n).or_insert_with(|| {
+                    let (serial, cpu) =
+                        measure_interleaved(&runtime, &task, &input, n, repeats);
+                    (
+                        (serial.actual_backend == BackendKind::Serial)
+                            .then(|| median(&serial.samples_ns)),
+                        (cpu.actual_backend == BackendKind::Cpu).then(|| median(&cpu.samples_ns)),
+                    )
+                });
+                match backend {
+                    BackendKind::Serial => costs.0,
+                    BackendKind::Cpu => costs.1,
                     BackendKind::Gpu => unreachable!(),
-                };
-                let measurement = measure(&runtime, &task, &input, n, mode, repeats);
-                (measurement.actual_backend == backend).then(|| median(&measurement.samples_ns))
+                }
             },
         );
         let elapsed = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
