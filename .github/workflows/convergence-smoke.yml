@@ -54,7 +54,8 @@ jobs:
 
       - name: Run W2 memory-sensitive evidence matrix
         env:
-          ALPENCAT_REPEATS: "3"
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
           ALPENCAT_CALLS_PER_POINT: "100"
         run: bash experiments/convergence/run_w2_evidence_matrix.sh
 
@@ -67,7 +68,8 @@ jobs:
 
       - name: Probe W2 revalidation budget sensitivity
         env:
-          ALPENCAT_REPEATS: "3"
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
         run: bash experiments/convergence/run_w2_budget_sensitivity.sh
 
       - name: Analyze W2 adaptation economics
@@ -95,36 +97,9 @@ jobs:
             evidence-w2-results/profile-shape.md
           retention-days: 7
 
-      - name: Probe W2 interval discovery
-        env:
-          ALPENCAT_REPEATS: "3"
-        run: bash experiments/convergence/run_w2_interval_probe.sh
-
-      - name: Upload W2 interval discovery
-        uses: actions/upload-artifact@v4
-        with:
-          name: convergence-w2-interval-${{ github.run_id }}
-          path: w2-interval-probe/
-          retention-days: 7
-
       - name: Upload W2 budget sensitivity
         uses: actions/upload-artifact@v4
         with:
           name: convergence-w2-budget-${{ github.run_id }}
           path: w2-budget-sensitivity/
-          retention-days: 7
-
-      - name: Test W2 stability analyzer
-        run: python3 -m unittest experiments/convergence/test_analyze_w2_stability.py -v
-
-      - name: Run W2 stability blocks
-        env:
-          ALPENCAT_STABILITY_REPEATS: "7"
-        run: bash experiments/convergence/run_w2_stability_blocks.sh
-
-      - name: Upload W2 stability blocks
-        uses: actions/upload-artifact@v4
-        with:
-          name: convergence-w2-stability-${{ github.run_id }}
-          path: w2-stability-blocks/
           retention-days: 7

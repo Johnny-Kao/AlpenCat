@@ -57,6 +57,7 @@ run_regime() {
   echo "[W2 ${index}/${total}] regime=${regime} cpus=${cpus} start_boundary=${start_boundary} bootstrap=${bootstrap} start"
   ALPENCAT_REGIME="$regime" \
   ALPENCAT_REPEATS="$REPEATS" \
+  ALPENCAT_WARMUP_PAIRS="${ALPENCAT_WARMUP_PAIRS:-2}" \
   ALPENCAT_START_BOUNDARY="$start_boundary" \
   ALPENCAT_BOOTSTRAP="$bootstrap" \
   ALPENCAT_REVALIDATION_POINTS="3" \
