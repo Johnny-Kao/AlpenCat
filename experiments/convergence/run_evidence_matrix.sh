@@ -47,13 +47,18 @@ run_regime() {
   local total="$2"
   local regime="$3"
   local cpus="$4"
+  local start_boundary="$5"
+  local bootstrap="$6"
   local output="$OUT_DIR/${regime}.jsonl"
   local started
   started="$(date +%s)"
 
-  echo "[E0 ${index}/${total}] regime=${regime} cpus=${cpus} start"
+  echo "[E0 ${index}/${total}] regime=${regime} cpus=${cpus} start_boundary=${start_boundary} bootstrap=${bootstrap} start"
   ALPENCAT_REGIME="$regime" \
   ALPENCAT_REPEATS="$REPEATS" \
+  ALPENCAT_START_BOUNDARY="$start_boundary" \
+  ALPENCAT_BOOTSTRAP="$bootstrap" \
+  ALPENCAT_REVALIDATION_POINTS="3" \
     taskset -c "$cpus" "$BIN" > "$output"
 
   local ended
@@ -61,11 +66,29 @@ run_regime() {
   echo "[E0 ${index}/${total}] regime=${regime} complete elapsed=$((ended-started))s records=$(wc -l < "$output")"
 }
 
+extract_boundary() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+fallback = int(sys.argv[2])
+for line in path.read_text().splitlines():
+    row = json.loads(line)
+    if row.get("record_type") == "revalidation":
+        print(int(row.get("published_serial_max_items", fallback)))
+        raise SystemExit
+print(fallback)
+PY
+}
+
 TOTAL=5
-run_regime 1 "$TOTAL" "baseline-full" "$ALL_CPUS"
+run_regime 1 "$TOTAL" "baseline-full" "$ALL_CPUS" "32768" "1"
+BASELINE_BOUNDARY="$(extract_boundary "$OUT_DIR/baseline-full.jsonl" 32768)"
+echo "[E0] baseline boundary=$BASELINE_BOUNDARY"
 
 if (("${#CPUS[@]}" > 1)); then
-  run_regime 2 "$TOTAL" "half" "$HALF_CPUS"
+  run_regime 2 "$TOTAL" "half" "$HALF_CPUS" "$BASELINE_BOUNDARY" "0"
 else
   cp "$OUT_DIR/baseline-full.jsonl" "$OUT_DIR/half.jsonl"
   python3 - "$OUT_DIR/half.jsonl" <<'PY'
@@ -81,7 +104,7 @@ PY
   echo "[E0 2/$TOTAL] regime=half synthetic-copy reason=single-cpu-host"
 fi
 
-run_regime 3 "$TOTAL" "one" "$ONE_CPU"
+run_regime 3 "$TOTAL" "one" "$ONE_CPU" "$BASELINE_BOUNDARY" "0"
 
 echo "[E0 4/$TOTAL] regime=contention starting controlled background load"
 BURNERS=()
@@ -100,13 +123,14 @@ for ((i=0; i<BURNER_COUNT; i++)); do
   BURNERS+=("$!")
 done
 sleep 1
-run_regime 4 "$TOTAL" "contention" "$ALL_CPUS"
+run_regime 4 "$TOTAL" "contention" "$ALL_CPUS" "$BASELINE_BOUNDARY" "0"
+CONTENTION_BOUNDARY="$(extract_boundary "$OUT_DIR/contention.jsonl" "$BASELINE_BOUNDARY")"
 cleanup
 BURNERS=()
 trap - EXIT
 
 sleep 1
-run_regime 5 "$TOTAL" "recovery" "$ALL_CPUS"
+run_regime 5 "$TOTAL" "recovery" "$ALL_CPUS" "$CONTENTION_BOUNDARY" "0"
 
 cat "$OUT_DIR"/baseline-full.jsonl \
     "$OUT_DIR"/half.jsonl \
