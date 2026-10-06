@@ -61,3 +61,15 @@ jobs:
           name: convergence-w2-${{ github.run_id }}
           path: evidence-w2-results/
           retention-days: 7
+
+      - name: Probe W2 revalidation budget sensitivity
+        env:
+          ALPENCAT_REPEATS: "3"
+        run: bash experiments/convergence/run_w2_budget_sensitivity.sh
+
+      - name: Upload W2 budget sensitivity
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w2-budget-${{ github.run_id }}
+          path: w2-budget-sensitivity/
+          retention-days: 7
