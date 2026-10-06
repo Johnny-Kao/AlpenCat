@@ -1,0 +1,61 @@
+name: W2 Replication
+
+on:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - .github/workflows/w2-replication.yml
+  workflow_dispatch:
+
+jobs:
+  replicate:
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [1, 2, 3, 4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Run warmed W2 evidence
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+          ALPENCAT_W2_OUT: "w2-replica-${{ matrix.replica }}"
+        run: |
+          bash experiments/convergence/run_w2_evidence_matrix.sh
+          echo "=== CPU ==="
+          grep -E 'Model name|Vendor ID|CPU\(s\)' "w2-replica-${{ matrix.replica }}/manifest.txt" || true
+
+      - name: Run warmed p3 sensitivity
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_W2_SENSITIVITY_OUT: "w2-sens-${{ matrix.replica }}"
+        run: bash experiments/convergence/run_w2_budget_sensitivity.sh
+
+      - name: Price escalation
+        run: |
+          python3 experiments/convergence/analyze_w2_escalation.py             "w2-replica-${{ matrix.replica }}"             "w2-sens-${{ matrix.replica }}"             --warmup-pairs 2
+
+      - name: Upload compact evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-replica-${{ matrix.replica }}-${{ github.run_id }}
+          path: |
+            w2-replica-${{ matrix.replica }}/manifest.txt
+            w2-replica-${{ matrix.replica }}/*.jsonl
+            w2-replica-${{ matrix.replica }}/economics-summary.*
+            w2-replica-${{ matrix.replica }}/policy-summary.csv
+            w2-replica-${{ matrix.replica }}/escalation-policy.*
+            w2-sens-${{ matrix.replica }}/summary.csv
+          retention-days: 3
