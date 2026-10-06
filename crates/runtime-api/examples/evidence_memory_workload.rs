@@ -162,7 +162,11 @@ fn measure_interleaved(
                         serial_backend = Some(backend);
                         serial_checksum = Some(sum);
                     }
-                    assert_eq!(Some(sum), serial_checksum, "serial output changed across pairs");
+                    assert_eq!(
+                        Some(sum),
+                        serial_checksum,
+                        "serial output changed across pairs"
+                    );
                     serial_samples.push(elapsed);
                 }
                 ExecutionMode::Cpu => {
@@ -265,8 +269,7 @@ fn main() {
             BoundedRevalidationConfig::new(revalidation_points, SIZES[0], SIZES[SIZES.len() - 1]),
             |n, backend| {
                 let costs = paired_costs.entry(n).or_insert_with(|| {
-                    let (serial, cpu) =
-                        measure_interleaved(&runtime, &task, &input, n, repeats);
+                    let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, repeats);
                     (
                         (serial.actual_backend == BackendKind::Serial)
                             .then(|| median(&serial.samples_ns)),
