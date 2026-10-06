@@ -295,6 +295,8 @@ def analyze_sensitivity(root):
 
 
 def finite_or_none(value):
+    if not isinstance(value, (int, float)):
+        return value
     return None if math.isinf(value) or math.isnan(value) else value
 
 
