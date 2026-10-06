@@ -83,6 +83,15 @@ jobs:
           python3 experiments/convergence/analyze_profile_shape.py \
             evidence-w2-results
 
+      - name: Test W2 economic escalation analyzer
+        run: python3 -m unittest experiments/convergence/test_analyze_w2_escalation.py -v
+
+      - name: Analyze W2 economic escalation
+        run: |
+          python3 experiments/convergence/analyze_w2_escalation.py \
+            evidence-w2-results w2-budget-sensitivity \
+            --warmup-pairs 2
+
       - name: Upload W2 adaptation economics
         uses: actions/upload-artifact@v4
         with:
@@ -95,6 +104,9 @@ jobs:
             evidence-w2-results/profile-shape.json
             evidence-w2-results/profile-shape.csv
             evidence-w2-results/profile-shape.md
+            evidence-w2-results/escalation-policy.json
+            evidence-w2-results/escalation-policy.csv
+            evidence-w2-results/escalation-policy.md
           retention-days: 7
 
       - name: Upload W2 budget sensitivity
