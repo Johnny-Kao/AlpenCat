@@ -187,17 +187,17 @@ def analyze(cases):
                             margin,
                             safety_factor,
                         )
-                    evaluated.append(result)
+                        evaluated.append(result)
                         details.append(
                             {
                                 "horizon": horizon,
                                 "break_even_safety_factor": safety_factor,
                                 "consistency_threshold": consistency,
-                            "margin_threshold_pct": margin,
-                            **case,
-                            **result,
-                        }
-                    )
+                                "margin_threshold_pct": margin,
+                                **case,
+                                **result,
+                            }
+                        )
 
                     total_available = sum(
                         row["available_regret_ns"] for row in evaluated
@@ -210,30 +210,30 @@ def analyze(cases):
                             "horizon": horizon,
                             "break_even_safety_factor": safety_factor,
                             "consistency_threshold": consistency,
-                        "margin_threshold_pct": margin,
-                        "actions": sum(row["act"] for row in evaluated),
-                        "positive_actions": sum(
-                            row["act"] and row["net_saving_ns"] > 0
-                            for row in evaluated
-                        ),
-                        "negative_actions": sum(
-                            row["act"] and row["net_saving_ns"] < 0
-                            for row in evaluated
-                        ),
-                        "mean_savings_pct": sum(
-                            row["savings_pct"] for row in evaluated
-                        )
-                        / len(evaluated),
-                        "min_case_savings_pct": min(
-                            row["savings_pct"] for row in evaluated
-                        ),
-                        "available_regret_capture_fraction": (
-                            0.0
-                            if total_available <= 0
-                            else total_positive / total_available
-                        ),
-                    }
-                )
+                            "margin_threshold_pct": margin,
+                            "actions": sum(row["act"] for row in evaluated),
+                            "positive_actions": sum(
+                                row["act"] and row["net_saving_ns"] > 0
+                                for row in evaluated
+                            ),
+                            "negative_actions": sum(
+                                row["act"] and row["net_saving_ns"] < 0
+                                for row in evaluated
+                            ),
+                            "mean_savings_pct": sum(
+                                row["savings_pct"] for row in evaluated
+                            )
+                            / len(evaluated),
+                            "min_case_savings_pct": min(
+                                row["savings_pct"] for row in evaluated
+                            ),
+                            "available_regret_capture_fraction": (
+                                0.0
+                                if total_available <= 0
+                                else total_positive / total_available
+                            ),
+                        }
+                    )
     return summaries, details
 
 
