@@ -30,8 +30,8 @@ jobs:
       - name: Check convergence code
         run: cargo clippy -p runtime-api --all-targets -- -D warnings
 
-      - name: Test convergence closed loop
-        run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+      - name: Test runtime API and convergence closed loop
+        run: cargo test -p runtime-api -- --nocapture
 
       - name: Run real compute workload across resource envelopes
         run: bash experiments/convergence/run_resource_envelope.sh
