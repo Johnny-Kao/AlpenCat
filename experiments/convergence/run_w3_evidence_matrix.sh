@@ -150,7 +150,7 @@ from pathlib import Path
 rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
 points = [row for row in rows if row.get("record_type") == "point"]
 revals = [row for row in rows if row.get("record_type") == "revalidation"]
-if len(points) != 30 or len(revals) != 5:
+if len(points) != 45 or len(revals) != 5:
     raise SystemExit(f"unexpected W3 evidence counts: points={len(points)} revalidation={len(revals)}")
 for row in points:
     if row["cpu_route_available"] and row["output_equivalent"] is not True:
