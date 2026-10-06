@@ -95,6 +95,18 @@ jobs:
             evidence-w2-results/profile-shape.md
           retention-days: 7
 
+      - name: Probe W2 interval discovery
+        env:
+          ALPENCAT_REPEATS: "3"
+        run: bash experiments/convergence/run_w2_interval_probe.sh
+
+      - name: Upload W2 interval discovery
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w2-interval-${{ github.run_id }}
+          path: w2-interval-probe/
+          retention-days: 7
+
       - name: Upload W2 budget sensitivity
         uses: actions/upload-artifact@v4
         with:
