@@ -1,0 +1,97 @@
+name: W2 Holdout Validation
+
+on:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - .github/workflows/w2-holdout.yml
+      - experiments/convergence/analyze_w2_holdout.py
+      - experiments/convergence/test_analyze_w2_holdout.py
+      - experiments/convergence/analyze_w2_escalation.py
+  workflow_dispatch:
+
+jobs:
+  holdout:
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [1, 2, 3, 4]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Run training evidence
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+          ALPENCAT_W2_OUT: "w2-holdout-${{ matrix.replica }}/train"
+        run: bash experiments/convergence/run_w2_evidence_matrix.sh
+
+      - name: Run training p3 sensitivity
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_W2_SENSITIVITY_OUT: "w2-holdout-${{ matrix.replica }}/sens"
+        run: bash experiments/convergence/run_w2_budget_sensitivity.sh
+
+      - name: Price training escalation
+        run: |
+          python3 experiments/convergence/analyze_w2_escalation.py \
+            "w2-holdout-${{ matrix.replica }}/train" \
+            "w2-holdout-${{ matrix.replica }}/sens" \
+            --warmup-pairs 2
+
+      - name: Run independent holdout evidence
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+          ALPENCAT_W2_OUT: "w2-holdout-${{ matrix.replica }}/holdout"
+        run: bash experiments/convergence/run_w2_evidence_matrix.sh
+
+      - name: Upload holdout replica
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-holdout-${{ matrix.replica }}-${{ github.run_id }}
+          path: w2-holdout-${{ matrix.replica }}/
+          retention-days: 3
+
+  aggregate:
+    needs: holdout
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download holdout replicas
+        uses: actions/download-artifact@v4
+        with:
+          pattern: w2-holdout-*-${{ github.run_id }}
+          path: w2-holdout-input
+          merge-multiple: false
+
+      - name: Test holdout analyzer
+        run: python3 -m unittest experiments/convergence/test_analyze_w2_holdout.py -v
+
+      - name: Analyze independent holdout
+        run: |
+          python3 experiments/convergence/analyze_w2_holdout.py \
+            w2-holdout-input \
+            --output w2-holdout-summary
+
+      - name: Upload holdout summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-holdout-summary-${{ github.run_id }}
+          path: w2-holdout-summary/
+          retention-days: 7
