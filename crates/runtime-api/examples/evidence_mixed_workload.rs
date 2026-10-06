@@ -75,18 +75,9 @@ fn execute(
     let handle = runtime
         .submit_map(task, WorkRange::new(0, n), mode, move |index| {
             let span = n.max(1);
-            let j1 = index
-                .wrapping_mul(1_315_423_911)
-                .wrapping_add(17)
-                % span;
-            let j2 = index
-                .wrapping_mul(2_654_435_761)
-                .wrapping_add(97)
-                % span;
-            let j3 = index
-                .wrapping_mul(805_459_861)
-                .wrapping_add(193)
-                % span;
+            let j1 = index.wrapping_mul(1_315_423_911).wrapping_add(17) % span;
+            let j2 = index.wrapping_mul(2_654_435_761).wrapping_add(97) % span;
+            let j3 = index.wrapping_mul(805_459_861).wrapping_add(193) % span;
 
             let mut x = input[index]
                 ^ input[j1].rotate_left(11)
