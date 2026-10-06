@@ -124,8 +124,21 @@ fn main() {
         .filter(|value| *value > 0 && value % 2 == 1)
         .unwrap_or(3);
 
+    let start_boundary = env::var("ALPENCAT_START_BOUNDARY")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(32_768);
+    let bootstrap = env::var("ALPENCAT_BOOTSTRAP")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let revalidation_points = env::var("ALPENCAT_REVALIDATION_POINTS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(3);
+
     let runtime = Runtime::with_config(RuntimeConfig {
-        boundary: BoundaryProfile::new(32_768, usize::MAX),
+        boundary: BoundaryProfile::new(start_boundary, usize::MAX),
         execution_budget: ExecutionBudget::default(),
         ..RuntimeConfig::default()
     });
@@ -146,44 +159,73 @@ fn main() {
         route_rows.push((n, serial, cpu, cpu_available, equivalent));
     }
 
-    runtime.invalidate_resources();
-    let revalidation_start = Instant::now();
-    let outcome = runtime.revalidate_serial_cpu(
-        BoundedRevalidationConfig::new(12, 1, 262_144),
-        |n, backend| {
-            let mode = match backend {
-                BackendKind::Serial => ExecutionMode::Serial,
-                BackendKind::Cpu => ExecutionMode::Cpu,
-                BackendKind::Gpu => unreachable!(),
-            };
-            let measurement = measure(&runtime, &task, n, mode, repeats);
-            (measurement.actual_backend == backend).then(|| median(&measurement.samples_ns))
-        },
-    );
-    let revalidation_elapsed_ns = revalidation_start
-        .elapsed()
-        .as_nanos()
-        .min(u64::MAX as u128) as u64;
-
-    let published = runtime.boundary_snapshot();
-    let status = match outcome.status {
-        RevalidationStatus::NotStale => "NotStale",
-        RevalidationStatus::Published => "Published",
-        RevalidationStatus::NoLocalCrossover => "NoLocalCrossover",
-        RevalidationStatus::RouteUnavailable(BackendKind::Serial) => "RouteUnavailable(Serial)",
-        RevalidationStatus::RouteUnavailable(BackendKind::Cpu) => "RouteUnavailable(Cpu)",
-        RevalidationStatus::RouteUnavailable(BackendKind::Gpu) => "RouteUnavailable(Gpu)",
-        RevalidationStatus::InvalidatedDuringMeasurement => "InvalidatedDuringMeasurement",
+    let (status, measurement_count, revalidation_elapsed_ns) = if bootstrap {
+        let mut boundary = SIZES[SIZES.len() - 1];
+        let mut previous = 0;
+        for (n, serial, cpu, cpu_available, _) in &route_rows {
+            if *cpu_available && median(&cpu.samples_ns) < median(&serial.samples_ns) {
+                boundary = previous;
+                break;
+            }
+            previous = *n;
+        }
+        runtime.publish_boundary(BoundaryProfile::new(boundary, usize::MAX));
+        let bootstrap_cost = route_rows
+            .iter()
+            .map(|(_, serial, cpu, cpu_available, _)| {
+                median(&serial.samples_ns)
+                    + if *cpu_available {
+                        median(&cpu.samples_ns)
+                    } else {
+                        0
+                    }
+            })
+            .sum();
+        ("Bootstrap", route_rows.len(), bootstrap_cost)
+    } else {
+        runtime.invalidate_resources();
+        let revalidation_start = Instant::now();
+        let outcome = runtime.revalidate_serial_cpu(
+            BoundedRevalidationConfig::new(revalidation_points, 1, 262_144),
+            |n, backend| {
+                let mode = match backend {
+                    BackendKind::Serial => ExecutionMode::Serial,
+                    BackendKind::Cpu => ExecutionMode::Cpu,
+                    BackendKind::Gpu => unreachable!(),
+                };
+                let measurement = measure(&runtime, &task, n, mode, repeats);
+                (measurement.actual_backend == backend)
+                    .then(|| median(&measurement.samples_ns))
+            },
+        );
+        let elapsed = revalidation_start
+            .elapsed()
+            .as_nanos()
+            .min(u64::MAX as u128) as u64;
+        let status = match outcome.status {
+            RevalidationStatus::NotStale => "NotStale",
+            RevalidationStatus::Published => "Published",
+            RevalidationStatus::NoLocalCrossover => "NoLocalCrossover",
+            RevalidationStatus::RouteUnavailable(BackendKind::Serial) => {
+                "RouteUnavailable(Serial)"
+            }
+            RevalidationStatus::RouteUnavailable(BackendKind::Cpu) => "RouteUnavailable(Cpu)",
+            RevalidationStatus::RouteUnavailable(BackendKind::Gpu) => "RouteUnavailable(Gpu)",
+            RevalidationStatus::InvalidatedDuringMeasurement => "InvalidatedDuringMeasurement",
+        };
+        (status, outcome.evidence.measurements.len(), elapsed)
     };
 
+    let published = runtime.boundary_snapshot();
     println!(
-        "{{\"record_type\":\"revalidation\",\"schema_version\":1,\"workload\":\"compute-mix-128\",\"regime\":\"{}\",\"status\":\"{}\",\"measurement_count\":{},\"revalidation_elapsed_ns\":{},\"published_serial_max_items\":{},\"boundary_stale\":{}}}",
+        "{{\"record_type\":\"revalidation\",\"schema_version\":1,\"workload\":\"compute-mix-128\",\"regime\":\"{}\",\"status\":\"{}\",\"measurement_count\":{},\"revalidation_elapsed_ns\":{},\"published_serial_max_items\":{},\"boundary_stale\":{},\"start_boundary\":{}}}",
         regime,
         status,
-        outcome.evidence.measurements.len(),
+        measurement_count,
         revalidation_elapsed_ns,
         published.profile.serial_max_items,
         runtime.boundary_is_stale(),
+        start_boundary,
     );
 
     for (n, serial, cpu, cpu_available, equivalent) in route_rows {
