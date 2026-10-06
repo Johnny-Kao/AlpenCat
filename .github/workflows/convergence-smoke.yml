@@ -48,3 +48,16 @@ jobs:
           name: convergence-e0-${{ github.run_id }}
           path: evidence-results/
           retention-days: 7
+
+      - name: Run W2 memory-sensitive evidence matrix
+        env:
+          ALPENCAT_REPEATS: "3"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: bash experiments/convergence/run_w2_evidence_matrix.sh
+
+      - name: Upload W2 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w2-${{ github.run_id }}
+          path: evidence-w2-results/
+          retention-days: 7
