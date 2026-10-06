@@ -1,0 +1,49 @@
+name: Switching Economics Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - experiments/convergence/analyze_switching_economics.py
+      - experiments/convergence/test_analyze_switching_economics.py
+      - .github/workflows/switching-economics.yml
+
+jobs:
+  switching-economics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test switching economics analyzer
+        run: python3 -m unittest experiments/convergence/test_analyze_switching_economics.py -v
+
+      - name: Run W2 evidence matrix
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: |
+          ALPENCAT_W2_OUT="$PWD/switching-evidence-w2" bash experiments/convergence/run_w2_evidence_matrix.sh
+          python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w2
+
+      - name: Run W3 evidence matrix
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: |
+          ALPENCAT_W3_OUT="$PWD/switching-evidence-w3" bash experiments/convergence/run_w3_evidence_matrix.sh
+          python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w3
+
+      - name: Upload switching economics evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: switching-economics-${{ github.run_id }}
+          path: |
+            switching-evidence-w2/
+            switching-evidence-w3/
+          retention-days: 7
