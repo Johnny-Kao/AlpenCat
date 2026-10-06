@@ -194,11 +194,7 @@ fn main() {
         runtime.invalidate_resources();
         let start = Instant::now();
         let outcome = runtime.revalidate_serial_cpu(
-            BoundedRevalidationConfig::new(
-                revalidation_points,
-                SIZES[0],
-                SIZES[SIZES.len() - 1],
-            ),
+            BoundedRevalidationConfig::new(revalidation_points, SIZES[0], SIZES[SIZES.len() - 1]),
             |n, backend| {
                 let mode = match backend {
                     BackendKind::Serial => ExecutionMode::Serial,
