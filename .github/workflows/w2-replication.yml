@@ -6,6 +6,7 @@ on:
       - research/convergence-adaptive-compute-sdk
     paths:
       - .github/workflows/w2-replication.yml
+      - experiments/convergence/analyze_w2_escalation.py
   workflow_dispatch:
 
 jobs:
