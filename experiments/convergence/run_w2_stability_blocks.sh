@@ -22,6 +22,7 @@ run_block() {
   echo "[W2 stability] regime=$regime block=$block rotation=$rot reverse=$rev"
   ALPENCAT_REGIME="$regime" \
   ALPENCAT_REPEATS="$REPEATS" \
+  ALPENCAT_WARMUP_PAIRS="2" \
   ALPENCAT_START_BOUNDARY="65536" \
   ALPENCAT_BOOTSTRAP="0" \
   ALPENCAT_REVALIDATION_POINTS="1" \
