@@ -49,6 +49,13 @@ class HoldoutPolicyTests(unittest.TestCase):
         self.assertFalse(result["act"])
         self.assertEqual(result["net_saving_ns"], 0.0)
 
+    def test_safety_factor_requires_headroom_beyond_break_even(self):
+        row = case(break_even=800)
+        aggressive = MODULE.evaluate(row, 1_000, 0.85, 5.0, 1.0)
+        conservative = MODULE.evaluate(row, 1_000, 0.85, 5.0, 2.0)
+        self.assertTrue(aggressive["act"])
+        self.assertFalse(conservative["act"])
+
 
 if __name__ == "__main__":
     unittest.main()

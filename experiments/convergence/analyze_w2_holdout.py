@@ -8,6 +8,7 @@ import statistics
 HORIZONS = (1_000, 10_000)
 CONSISTENCY_THRESHOLDS = (0.70, 0.85, 1.00)
 MARGIN_THRESHOLDS = (0.0, 5.0, 10.0)
+BREAK_EVEN_SAFETY_FACTORS = (1.0, 2.0, 4.0)
 
 
 def median(values):
@@ -119,11 +120,17 @@ def discover(root):
     return cases
 
 
-def evaluate(case, horizon, consistency_threshold, margin_threshold):
+def evaluate(
+    case,
+    horizon,
+    consistency_threshold,
+    margin_threshold,
+    break_even_safety_factor=1.0,
+):
     break_even = case["train_break_even_calls"]
     act = (
         break_even is not None
-        and break_even <= horizon
+        and break_even * break_even_safety_factor <= horizon
         and case["train_candidate_capture_fraction"] > 0.0
         and case["train_sentinel_consistency"] >= consistency_threshold
         and case["train_sentinel_margin_pct"] >= margin_threshold
@@ -168,32 +175,41 @@ def analyze(cases):
     summaries = []
     details = []
     for horizon in HORIZONS:
-        for consistency in CONSISTENCY_THRESHOLDS:
-            for margin in MARGIN_THRESHOLDS:
-                evaluated = []
-                for case in cases:
-                    result = evaluate(case, horizon, consistency, margin)
+        for safety_factor in BREAK_EVEN_SAFETY_FACTORS:
+            for consistency in CONSISTENCY_THRESHOLDS:
+                for margin in MARGIN_THRESHOLDS:
+                    evaluated = []
+                    for case in cases:
+                        result = evaluate(
+                            case,
+                            horizon,
+                            consistency,
+                            margin,
+                            safety_factor,
+                        )
                     evaluated.append(result)
-                    details.append(
-                        {
-                            "horizon": horizon,
-                            "consistency_threshold": consistency,
+                        details.append(
+                            {
+                                "horizon": horizon,
+                                "break_even_safety_factor": safety_factor,
+                                "consistency_threshold": consistency,
                             "margin_threshold_pct": margin,
                             **case,
                             **result,
                         }
                     )
 
-                total_available = sum(
-                    row["available_regret_ns"] for row in evaluated
-                )
-                total_positive = sum(
-                    max(0.0, row["net_saving_ns"]) for row in evaluated
-                )
-                summaries.append(
-                    {
-                        "horizon": horizon,
-                        "consistency_threshold": consistency,
+                    total_available = sum(
+                        row["available_regret_ns"] for row in evaluated
+                    )
+                    total_positive = sum(
+                        max(0.0, row["net_saving_ns"]) for row in evaluated
+                    )
+                    summaries.append(
+                        {
+                            "horizon": horizon,
+                            "break_even_safety_factor": safety_factor,
+                            "consistency_threshold": consistency,
                         "margin_threshold_pct": margin,
                         "actions": sum(row["act"] for row in evaluated),
                         "positive_actions": sum(
@@ -264,8 +280,8 @@ def main():
         "",
         "Training evidence chooses the candidate and break-even. Independent holdout evidence prices the resulting action.",
         "",
-        "| Horizon | Consistency | Margin | Actions | Positive | Negative | Mean saving | Worst case | Holdout regret captured |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Horizon | BE safety | Consistency | Margin | Actions | Positive | Negative | Mean saving | Worst case | Holdout regret captured |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in summaries:
         lines.append(
@@ -273,6 +289,7 @@ def main():
             + " | ".join(
                 [
                     str(row["horizon"]),
+                    f"{row['break_even_safety_factor']:.1f}x",
                     f"{100 * row['consistency_threshold']:.0f}%",
                     f"{row['margin_threshold_pct']:.0f}%",
                     str(row["actions"]),
