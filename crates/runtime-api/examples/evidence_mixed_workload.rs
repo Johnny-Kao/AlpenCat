@@ -10,7 +10,7 @@ use runtime_api::{
 };
 
 const WORKLOAD: &str = "mixed-gather-mix-u64";
-const SIZES: [usize; 9] = [64, 256, 1_024, 4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304];
+const SIZES: [usize; 9] = [\n    64, 256, 1_024, 4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304,\n];
 
 #[derive(Debug)]
 struct Measurement {
