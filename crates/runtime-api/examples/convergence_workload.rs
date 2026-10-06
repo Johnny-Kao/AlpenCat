@@ -16,12 +16,7 @@ fn kernel(mut x: u64) -> u64 {
     x
 }
 
-fn execute(
-    runtime: &Runtime,
-    task: &TaskDefinition,
-    n: usize,
-    mode: ExecutionMode,
-) -> Vec<u64> {
+fn execute(runtime: &Runtime, task: &TaskDefinition, n: usize, mode: ExecutionMode) -> Vec<u64> {
     runtime
         .wait(
             runtime
