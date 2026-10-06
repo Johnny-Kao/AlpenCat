@@ -31,10 +31,12 @@ fn stale_boundary_revalidates_and_changes_real_execution_route() {
 
     let outcome = runtime.revalidate_serial_cpu(
         BoundedRevalidationConfig::new(3, 512, 8_192),
-        |work_items, backend| match backend {
-            BackendKind::Serial => work_items as u64,
-            BackendKind::Cpu => 1_500,
-            BackendKind::Gpu => unreachable!(),
+        |work_items, backend| {
+            Some(match backend {
+                BackendKind::Serial => work_items as u64,
+                BackendKind::Cpu => 1_500,
+                BackendKind::Gpu => unreachable!(),
+            })
         },
     );
 
@@ -64,10 +66,12 @@ fn bounded_failure_keeps_boundary_stale() {
 
     let outcome = runtime.revalidate_serial_cpu(
         BoundedRevalidationConfig::new(3, 256, 8_192),
-        |_work_items, backend| match backend {
-            BackendKind::Serial => 100,
-            BackendKind::Cpu => 200,
-            BackendKind::Gpu => unreachable!(),
+        |_work_items, backend| {
+            Some(match backend {
+                BackendKind::Serial => 100,
+                BackendKind::Cpu => 200,
+                BackendKind::Gpu => unreachable!(),
+            })
         },
     );
 
@@ -97,11 +101,11 @@ fn resource_change_during_measurement_cannot_publish_fresh_state() {
                 runtime.invalidate_resources();
                 invalidated_again = true;
             }
-            match backend {
+            Some(match backend {
                 BackendKind::Serial => work_items as u64,
                 BackendKind::Cpu => 1_500,
                 BackendKind::Gpu => unreachable!(),
-            }
+            })
         },
     );
 
@@ -110,6 +114,35 @@ fn resource_change_during_measurement_cannot_publish_fresh_state() {
         RevalidationStatus::InvalidatedDuringMeasurement
     );
     assert_eq!(runtime.resource_epoch(), epoch_before + 1);
+    assert!(runtime.boundary_is_stale());
+    assert_eq!(
+        runtime.boundary_snapshot().profile,
+        BoundaryProfile::new(4_096, 262_144)
+    );
+}
+
+#[test]
+fn unavailable_cpu_route_is_not_published_as_crossover_evidence() {
+    let runtime = Runtime::with_config(RuntimeConfig {
+        boundary: BoundaryProfile::new(4_096, 262_144),
+        ..RuntimeConfig::default()
+    });
+
+    runtime.invalidate_resources();
+
+    let outcome = runtime.revalidate_serial_cpu(
+        BoundedRevalidationConfig::new(3, 512, 8_192),
+        |_work_items, backend| match backend {
+            BackendKind::Serial => Some(100),
+            BackendKind::Cpu => None,
+            BackendKind::Gpu => unreachable!(),
+        },
+    );
+
+    assert_eq!(
+        outcome.status,
+        RevalidationStatus::RouteUnavailable(BackendKind::Cpu)
+    );
     assert!(runtime.boundary_is_stale());
     assert_eq!(
         runtime.boundary_snapshot().profile,

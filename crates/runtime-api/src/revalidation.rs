@@ -36,16 +36,24 @@ impl Default for BoundedRevalidationConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteMeasurement {
     pub work_items: usize,
-    pub serial_cost: u64,
-    pub cpu_cost: u64,
+    pub serial_cost: Option<u64>,
+    pub cpu_cost: Option<u64>,
 }
 
 impl RouteMeasurement {
-    pub const fn preferred_backend(self) -> BackendKind {
-        if self.serial_cost <= self.cpu_cost {
-            BackendKind::Serial
-        } else {
-            BackendKind::Cpu
+    pub const fn preferred_backend(self) -> Option<BackendKind> {
+        match (self.serial_cost, self.cpu_cost) {
+            (Some(serial), Some(cpu)) if serial <= cpu => Some(BackendKind::Serial),
+            (Some(_), Some(_)) => Some(BackendKind::Cpu),
+            _ => None,
+        }
+    }
+
+    pub const fn unavailable_backend(self) -> Option<BackendKind> {
+        match (self.serial_cost, self.cpu_cost) {
+            (None, _) => Some(BackendKind::Serial),
+            (_, None) => Some(BackendKind::Cpu),
+            _ => None,
         }
     }
 }
@@ -53,6 +61,7 @@ impl RouteMeasurement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalBoundaryEvidence {
     pub proposed_boundary: Option<BoundaryProfile>,
+    pub unavailable_backend: Option<BackendKind>,
     pub measurements: Vec<RouteMeasurement>,
 }
 
@@ -61,6 +70,7 @@ pub enum RevalidationStatus {
     NotStale,
     Published,
     NoLocalCrossover,
+    RouteUnavailable(BackendKind),
     InvalidatedDuringMeasurement,
 }
 
@@ -73,7 +83,7 @@ pub struct RuntimeRevalidationOutcome {
 
 fn measure_point<F>(work_items: usize, measure: &mut F) -> RouteMeasurement
 where
-    F: FnMut(usize, BackendKind) -> u64,
+    F: FnMut(usize, BackendKind) -> Option<u64>,
 {
     RouteMeasurement {
         work_items,
@@ -84,16 +94,16 @@ where
 
 /// Search only a bounded neighborhood around the old serial/CPU boundary.
 ///
-/// If no local crossover is observed, the proposed boundary is absent. The
-/// caller must leave the old boundary stale rather than extrapolating that the
-/// CPU route disappeared globally.
+/// An unavailable route is not timing evidence. If either route cannot execute
+/// as requested, or if no local crossover is observed, no boundary is proposed.
+/// The caller must not extrapolate a local failure into a global routing claim.
 pub fn bounded_revalidate_serial_cpu<F>(
     boundary: BoundaryProfile,
     config: BoundedRevalidationConfig,
     mut measure: F,
 ) -> LocalBoundaryEvidence
 where
-    F: FnMut(usize, BackendKind) -> u64,
+    F: FnMut(usize, BackendKind) -> Option<u64>,
 {
     let min_items = config.min_items.max(1);
     let max_items = config.max_items.max(min_items);
@@ -104,10 +114,21 @@ where
     let first = measure_point(start, &mut measure);
     measurements.push(first);
 
+    if let Some(unavailable_backend) = first.unavailable_backend() {
+        return LocalBoundaryEvidence {
+            proposed_boundary: None,
+            unavailable_backend: Some(unavailable_backend),
+            measurements,
+        };
+    }
+
     let mut serial_point = None;
     let mut cpu_point = None;
 
-    match first.preferred_backend() {
+    match first
+        .preferred_backend()
+        .expect("available routes have a preference")
+    {
         BackendKind::Serial => serial_point = Some(start),
         BackendKind::Cpu => cpu_point = Some(start),
         BackendKind::Gpu => unreachable!(),
@@ -129,7 +150,18 @@ where
         let measurement = measure_point(current, &mut measure);
         measurements.push(measurement);
 
-        match measurement.preferred_backend() {
+        if let Some(unavailable_backend) = measurement.unavailable_backend() {
+            return LocalBoundaryEvidence {
+                proposed_boundary: None,
+                unavailable_backend: Some(unavailable_backend),
+                measurements,
+            };
+        }
+
+        match measurement
+            .preferred_backend()
+            .expect("available routes have a preference")
+        {
             BackendKind::Serial => serial_point = Some(current),
             BackendKind::Cpu => cpu_point = Some(current),
             BackendKind::Gpu => unreachable!(),
@@ -146,6 +178,7 @@ where
 
     LocalBoundaryEvidence {
         proposed_boundary,
+        unavailable_backend: None,
         measurements,
     }
 }
@@ -159,10 +192,12 @@ mod tests {
         let result = bounded_revalidate_serial_cpu(
             BoundaryProfile::new(1_024, 262_144),
             BoundedRevalidationConfig::new(3, 256, 8_192),
-            |n, backend| match backend {
-                BackendKind::Serial => n as u64,
-                BackendKind::Cpu => 1_500,
-                BackendKind::Gpu => unreachable!(),
+            |n, backend| {
+                Some(match backend {
+                    BackendKind::Serial => n as u64,
+                    BackendKind::Cpu => 1_500,
+                    BackendKind::Gpu => unreachable!(),
+                })
             },
         );
 
@@ -170,6 +205,7 @@ mod tests {
             result.proposed_boundary,
             Some(BoundaryProfile::new(1_024, 262_144))
         );
+        assert_eq!(result.unavailable_backend, None);
         assert_eq!(result.measurements.len(), 2);
     }
 
@@ -178,14 +214,34 @@ mod tests {
         let result = bounded_revalidate_serial_cpu(
             BoundaryProfile::new(1_024, 262_144),
             BoundedRevalidationConfig::new(3, 256, 8_192),
+            |_n, backend| {
+                Some(match backend {
+                    BackendKind::Serial => 100,
+                    BackendKind::Cpu => 200,
+                    BackendKind::Gpu => unreachable!(),
+                })
+            },
+        );
+
+        assert_eq!(result.proposed_boundary, None);
+        assert_eq!(result.unavailable_backend, None);
+        assert_eq!(result.measurements.len(), 3);
+    }
+
+    #[test]
+    fn unavailable_route_is_not_treated_as_timing_evidence() {
+        let result = bounded_revalidate_serial_cpu(
+            BoundaryProfile::new(1_024, 262_144),
+            BoundedRevalidationConfig::new(3, 256, 8_192),
             |_n, backend| match backend {
-                BackendKind::Serial => 100,
-                BackendKind::Cpu => 200,
+                BackendKind::Serial => Some(100),
+                BackendKind::Cpu => None,
                 BackendKind::Gpu => unreachable!(),
             },
         );
 
         assert_eq!(result.proposed_boundary, None);
-        assert_eq!(result.measurements.len(), 3);
+        assert_eq!(result.unavailable_backend, Some(BackendKind::Cpu));
+        assert_eq!(result.measurements.len(), 1);
     }
 }

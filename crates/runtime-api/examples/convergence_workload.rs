@@ -28,7 +28,12 @@ fn execute(runtime: &Runtime, task: &TaskDefinition, n: usize, mode: ExecutionMo
         .value
 }
 
-fn measure(runtime: &Runtime, task: &TaskDefinition, n: usize, backend: BackendKind) -> u64 {
+fn measure(
+    runtime: &Runtime,
+    task: &TaskDefinition,
+    n: usize,
+    backend: BackendKind,
+) -> Option<u64> {
     let mode = match backend {
         BackendKind::Serial => ExecutionMode::Serial,
         BackendKind::Cpu => ExecutionMode::Cpu,
@@ -38,12 +43,23 @@ fn measure(runtime: &Runtime, task: &TaskDefinition, n: usize, backend: BackendK
     let mut samples = [0_u64; 3];
     for sample in &mut samples {
         let start = Instant::now();
-        let values = execute(runtime, task, n, mode);
-        black_box(values.last().copied().unwrap_or_default());
+        let handle = runtime
+            .submit_map(task, WorkRange::new(0, n), mode, |index| {
+                kernel(index as u64 + 1)
+            })
+            .expect("workload route must execute");
+        let decision = handle.decision();
+        let result = runtime.wait(handle);
+        black_box(result.value.last().copied().unwrap_or_default());
+
+        if decision.backend != backend {
+            return None;
+        }
+
         *sample = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
     }
     samples.sort_unstable();
-    samples[1]
+    Some(samples[1])
 }
 
 fn main() {
@@ -60,7 +76,7 @@ fn main() {
 
     runtime.invalidate_resources();
     let outcome = runtime.revalidate_serial_cpu(
-        BoundedRevalidationConfig::new(6, 1_024, 262_144),
+        BoundedRevalidationConfig::new(12, 1, 262_144),
         |n, backend| measure(&runtime, &task, n, backend),
     );
 

@@ -281,7 +281,7 @@ impl Runtime {
         measure: F,
     ) -> RuntimeRevalidationOutcome
     where
-        F: FnMut(usize, BackendKind) -> u64,
+        F: FnMut(usize, BackendKind) -> Option<u64>,
     {
         let previous = self.boundary_snapshot();
         let measurement_epoch = self.resource_epoch.current();
@@ -291,6 +291,7 @@ impl Runtime {
                 status: RevalidationStatus::NotStale,
                 evidence: LocalBoundaryEvidence {
                     proposed_boundary: None,
+                    unavailable_backend: None,
                     measurements: Vec::new(),
                 },
                 published_boundary: None,
@@ -302,6 +303,14 @@ impl Runtime {
         if self.resource_epoch.current() != measurement_epoch {
             return RuntimeRevalidationOutcome {
                 status: RevalidationStatus::InvalidatedDuringMeasurement,
+                evidence,
+                published_boundary: None,
+            };
+        }
+
+        if let Some(backend) = evidence.unavailable_backend {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::RouteUnavailable(backend),
                 evidence,
                 published_boundary: None,
             };
