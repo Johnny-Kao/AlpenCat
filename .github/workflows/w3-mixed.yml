@@ -1,0 +1,46 @@
+name: W3 Mixed Validation
+
+on:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - .github/workflows/w3-mixed.yml
+      - crates/runtime-api/examples/evidence_mixed_workload.rs
+      - experiments/convergence/run_w3_evidence_matrix.sh
+      - experiments/convergence/analyze_economics.py
+  workflow_dispatch:
+
+jobs:
+  mixed-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check mixed workload
+        run: cargo clippy -p runtime-api --example evidence_mixed_workload -- -D warnings
+
+      - name: Run W3 mixed evidence matrix
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: bash experiments/convergence/run_w3_evidence_matrix.sh
+
+      - name: Upload W3 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w3-${{ github.run_id }}
+          path: evidence-w3-results/
+          retention-days: 7
