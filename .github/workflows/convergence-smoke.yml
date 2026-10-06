@@ -37,6 +37,7 @@ jobs:
         run: |
           python3 -m unittest experiments/convergence/test_analyze_economics.py -v
           python3 -m unittest experiments/convergence/test_analyze_adaptation_economics.py -v
+          python3 -m unittest experiments/convergence/test_analyze_switching_economics.py -v
           python3 -m unittest experiments/convergence/test_analyze_profile_shape.py -v
 
       - name: Run E0 evidence matrix
