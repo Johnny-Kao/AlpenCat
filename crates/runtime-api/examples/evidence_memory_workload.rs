@@ -131,8 +131,20 @@ fn measure_interleaved(
     task: &TaskDefinition,
     input: &Arc<Vec<u64>>,
     n: usize,
+    warmup_pairs: usize,
     repeats: usize,
 ) -> (Measurement, Measurement) {
+    for warmup in 0..warmup_pairs {
+        let modes = if warmup % 2 == 0 {
+            [ExecutionMode::Serial, ExecutionMode::Cpu]
+        } else {
+            [ExecutionMode::Cpu, ExecutionMode::Serial]
+        };
+        for mode in modes {
+            let (_backend, values) = execute(runtime, task, input, n, mode);
+            black_box(values.last().copied().unwrap_or_default());
+        }
+    }
     let mut serial_samples = Vec::with_capacity(repeats);
     let mut cpu_samples = Vec::with_capacity(repeats);
     let mut serial_backend = None;
@@ -205,6 +217,10 @@ fn main() {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0 && value % 2 == 1)
         .unwrap_or(3);
+    let warmup_pairs = env::var("ALPENCAT_WARMUP_PAIRS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
     let start_boundary = env::var("ALPENCAT_START_BOUNDARY")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
@@ -244,7 +260,8 @@ fn main() {
 
     let mut route_rows = Vec::new();
     for n in measurement_sizes {
-        let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, repeats);
+        let (serial, cpu) =
+            measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
         assert_eq!(serial.actual_backend, BackendKind::Serial);
         let cpu_available = cpu.actual_backend == BackendKind::Cpu;
         let equivalent = cpu_available.then_some(serial.checksum == cpu.checksum);
@@ -285,7 +302,8 @@ fn main() {
             BoundedRevalidationConfig::new(revalidation_points, SIZES[0], SIZES[SIZES.len() - 1]),
             |n, backend| {
                 let costs = paired_costs.entry(n).or_insert_with(|| {
-                    let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, repeats);
+                    let (serial, cpu) =
+                        measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
                     (
                         (serial.actual_backend == BackendKind::Serial)
                             .then(|| median(&serial.samples_ns)),
