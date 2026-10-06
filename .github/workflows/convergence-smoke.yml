@@ -33,8 +33,10 @@ jobs:
       - name: Test runtime API and convergence closed loop
         run: cargo test -p runtime-api -- --nocapture
 
-      - name: Test economics analyzer
-        run: python3 -m unittest experiments/convergence/test_analyze_economics.py -v
+      - name: Test economics analyzers
+        run: |
+          python3 -m unittest experiments/convergence/test_analyze_economics.py -v
+          python3 -m unittest experiments/convergence/test_analyze_adaptation_economics.py -v
 
       - name: Run E0 evidence matrix
         env:
@@ -66,6 +68,23 @@ jobs:
         env:
           ALPENCAT_REPEATS: "3"
         run: bash experiments/convergence/run_w2_budget_sensitivity.sh
+
+      - name: Analyze W2 adaptation economics
+        run: |
+          python3 experiments/convergence/analyze_adaptation_economics.py \
+            evidence-w2-results \
+            --sensitivity-root w2-budget-sensitivity
+
+      - name: Upload W2 adaptation economics
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w2-adaptation-${{ github.run_id }}
+          path: |
+            evidence-w2-results/adaptation-economics.json
+            evidence-w2-results/adaptation-economics.csv
+            evidence-w2-results/adaptation-economics.md
+            evidence-w2-results/adaptation-budget-sensitivity.csv
+          retention-days: 7
 
       - name: Upload W2 budget sensitivity
         uses: actions/upload-artifact@v4
