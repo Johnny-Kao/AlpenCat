@@ -81,6 +81,8 @@ def main():
     switching = load_json(args.switching_json)
     profile = load_json(args.profile_json) if args.profile_json else None
     sensitivity = load_json(args.sensitivity_json) if args.sensitivity_json else None
+    if isinstance(sensitivity, dict):
+        sensitivity = sensitivity.get("budget_sensitivity", sensitivity.get("rows", []))
 
     rows = classify(switching, profile, sensitivity)
     print(json.dumps(rows, indent=2, sort_keys=True))
