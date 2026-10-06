@@ -119,7 +119,7 @@ jobs:
 
       - name: Run W2 stability blocks
         env:
-          ALPENCAT_STABILITY_REPEATS: "5"
+          ALPENCAT_STABILITY_REPEATS: "7"
         run: bash experiments/convergence/run_w2_stability_blocks.sh
 
       - name: Upload W2 stability blocks
