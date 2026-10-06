@@ -37,6 +37,7 @@ jobs:
         run: |
           python3 -m unittest experiments/convergence/test_analyze_economics.py -v
           python3 -m unittest experiments/convergence/test_analyze_adaptation_economics.py -v
+          python3 -m unittest experiments/convergence/test_analyze_profile_shape.py -v
 
       - name: Run E0 evidence matrix
         env:
@@ -75,6 +76,11 @@ jobs:
             evidence-w2-results \
             --sensitivity-root w2-budget-sensitivity
 
+      - name: Analyze W2 profile shape
+        run: |
+          python3 experiments/convergence/analyze_profile_shape.py \
+            evidence-w2-results
+
       - name: Upload W2 adaptation economics
         uses: actions/upload-artifact@v4
         with:
@@ -84,6 +90,9 @@ jobs:
             evidence-w2-results/adaptation-economics.csv
             evidence-w2-results/adaptation-economics.md
             evidence-w2-results/adaptation-budget-sensitivity.csv
+            evidence-w2-results/profile-shape.json
+            evidence-w2-results/profile-shape.csv
+            evidence-w2-results/profile-shape.md
           retention-days: 7
 
       - name: Upload W2 budget sensitivity

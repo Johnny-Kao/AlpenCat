@@ -92,6 +92,20 @@ References:
 - https://arxiv.org/abs/2102.05297
 - https://arxiv.org/abs/1910.08498
 
+### SMARTMoE — switching threshold and adaptation frequency
+
+SMARTMoE separates offline candidate construction from lightweight online adaptation. Its runtime policy explicitly considers searching and switching cost, filters plan changes with only minor improvement, and shows the same frequency trade-off AlpenCat faces: searching every iteration adapts quickly but costs too much, while searching too infrequently lets performance drift. In one measured case, a roughly 20 ms switch was repaid by about 8 ms gain per step after roughly three steps.
+
+Implication for AlpenCat:
+
+- compare expected gain against switching/revalidation cost;
+- exploit temporal locality instead of globally rediscovering a plan;
+- keep the online candidate set/profile deliberately small;
+- measure payback in future useful calls rather than treating revalidation cost in isolation.
+
+Reference:
+- https://www.usenix.org/conference/atc23/presentation/zhai
+
 ### SQL Server automatic tuning — economic gate, verify, revert
 
 SQL Server automatic plan correction identifies plan regressions, applies a prior good plan, verifies the result after action, and reverts changes that do not improve performance. Its recommendations also expose estimated gain; Microsoft documentation uses an estimated CPU gain threshold before automatic forcing.
@@ -296,3 +310,40 @@ Only after the analyzer is green:
 - A5 supported -> stay lazy / reuse prior experience.
 
 This keeps AlpenCat evidence-driven and prevents policy complexity from being added merely because it sounds plausible.
+
+
+## 11. Minimal profile-shape hypothesis
+
+W2 has exposed a concrete representation question.
+
+A single scalar crossover can encode only:
+
+~~~
+Serial -> CPU
+~~~
+
+A memory-sensitive workload may instead exhibit:
+
+~~~
+Serial -> CPU -> Serial
+~~~
+
+under CPU restriction or contention.
+
+Before changing Runtime Core, compare three offline representations on the same raw evidence:
+
+1. one scalar boundary;
+2. one bounded CPU interval with two boundaries;
+3. per-point Oracle.
+
+The interval representation is intentionally the smallest richer candidate:
+
+~~~
+Serial, n <= lower
+CPU,    lower < n <= upper
+Serial, n > upper
+~~~
+
+If two boundaries repeatedly recover nearly all of the Oracle gap while one boundary leaves material regret, A3 is supported without requiring a predictor, lookup table, or ML model.
+
+If the interval also fails, do not keep adding boundaries mechanically; revisit the workload key and resource-state representation.
