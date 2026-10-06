@@ -13,7 +13,7 @@ concurrency:
 jobs:
   closed-loop:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +33,18 @@ jobs:
       - name: Test runtime API and convergence closed loop
         run: cargo test -p runtime-api -- --nocapture
 
-      - name: Run real compute workload across resource envelopes
-        run: bash experiments/convergence/run_resource_envelope.sh
+      - name: Test economics analyzer
+        run: python3 -m unittest experiments/convergence/test_analyze_economics.py -v
 
-      - name: Upload convergence smoke evidence
+      - name: Run E0 evidence matrix
+        env:
+          ALPENCAT_REPEATS: "3"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: bash experiments/convergence/run_evidence_matrix.sh
+
+      - name: Upload E0 evidence
         uses: actions/upload-artifact@v4
         with:
-          name: convergence-smoke-${{ github.run_id }}
-          path: convergence-results/
+          name: convergence-e0-${{ github.run_id }}
+          path: evidence-results/
           retention-days: 7

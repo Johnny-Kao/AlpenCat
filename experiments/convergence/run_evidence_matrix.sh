@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OUT_DIR="${ALPENCAT_EVIDENCE_OUT:-$ROOT/evidence-results}"
+BIN="$ROOT/target/release/examples/evidence_workload"
+REPEATS="${ALPENCAT_REPEATS:-3}"
+CALLS_PER_POINT="${ALPENCAT_CALLS_PER_POINT:-100}"
+
+mkdir -p "$OUT_DIR"
+rm -f "$OUT_DIR"/*.jsonl "$OUT_DIR"/economics-summary.json "$OUT_DIR"/policy-summary.csv
+
+echo "[E0] building evidence workload"
+cargo build --release -p runtime-api --example evidence_workload
+
+mapfile -t CPUS < <(python3 - <<'PY'
+import os
+for cpu in sorted(os.sched_getaffinity(0)):
+    print(cpu)
+PY
+)
+
+if (("${#CPUS[@]}" == 0)); then
+  echo "no schedulable CPUs detected" >&2
+  exit 1
+fi
+
+ALL_CPUS="$(IFS=,; echo "${CPUS[*]}")"
+HALF_COUNT=$(( ("${#CPUS[@]}" + 1) / 2 ))
+HALF_CPUS="$(IFS=,; echo "${CPUS[*]:0:$HALF_COUNT}")"
+ONE_CPU="${CPUS[0]}"
+
+{
+  echo "git_sha=$(git -C "$ROOT" rev-parse HEAD)"
+  echo "utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "uname=$(uname -a)"
+  echo "effective_cpus=$ALL_CPUS"
+  echo "half_cpus=$HALF_CPUS"
+  echo "one_cpu=$ONE_CPU"
+  echo "cpu_max=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null || true)"
+  echo "cpuset=$(cat /sys/fs/cgroup/cpuset.cpus.effective 2>/dev/null || true)"
+  lscpu 2>/dev/null || true
+} > "$OUT_DIR/manifest.txt"
+
+run_regime() {
+  local index="$1"
+  local total="$2"
+  local regime="$3"
+  local cpus="$4"
+  local output="$OUT_DIR/${regime}.jsonl"
+  local started
+  started="$(date +%s)"
+
+  echo "[E0 ${index}/${total}] regime=${regime} cpus=${cpus} start"
+  ALPENCAT_REGIME="$regime" \
+  ALPENCAT_REPEATS="$REPEATS" \
+    taskset -c "$cpus" "$BIN" > "$output"
+
+  local ended
+  ended="$(date +%s)"
+  echo "[E0 ${index}/${total}] regime=${regime} complete elapsed=$((ended-started))s records=$(wc -l < "$output")"
+}
+
+TOTAL=5
+run_regime 1 "$TOTAL" "baseline-full" "$ALL_CPUS"
+
+if (("${#CPUS[@]}" > 1)); then
+  run_regime 2 "$TOTAL" "half" "$HALF_CPUS"
+else
+  cp "$OUT_DIR/baseline-full.jsonl" "$OUT_DIR/half.jsonl"
+  python3 - "$OUT_DIR/half.jsonl" <<'PY'
+import json
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+for row in rows:
+    row["regime"] = "half"
+path.write_text("\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n")
+PY
+  echo "[E0 2/$TOTAL] regime=half synthetic-copy reason=single-cpu-host"
+fi
+
+run_regime 3 "$TOTAL" "one" "$ONE_CPU"
+
+echo "[E0 4/$TOTAL] regime=contention starting controlled background load"
+BURNERS=()
+cleanup() {
+  for pid in "${BURNERS[@]:-}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT
+
+BURNER_COUNT=$(( "${#CPUS[@]}" > 2 ? 2 : 1 ))
+for ((i=0; i<BURNER_COUNT; i++)); do
+  cpu="${CPUS[$i]}"
+  taskset -c "$cpu" sh -c 'while :; do :; done' &
+  BURNERS+=("$!")
+done
+sleep 1
+run_regime 4 "$TOTAL" "contention" "$ALL_CPUS"
+cleanup
+BURNERS=()
+trap - EXIT
+
+sleep 1
+run_regime 5 "$TOTAL" "recovery" "$ALL_CPUS"
+
+cat "$OUT_DIR"/baseline-full.jsonl \
+    "$OUT_DIR"/half.jsonl \
+    "$OUT_DIR"/one.jsonl \
+    "$OUT_DIR"/contention.jsonl \
+    "$OUT_DIR"/recovery.jsonl \
+    > "$OUT_DIR/evidence.jsonl"
+
+echo "[E0] validating evidence records"
+python3 - "$OUT_DIR/evidence.jsonl" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+if not rows:
+    raise SystemExit("no evidence rows")
+point_rows = [row for row in rows if row.get("record_type") == "point"]
+revalidation_rows = [row for row in rows if row.get("record_type") == "revalidation"]
+if not point_rows or not revalidation_rows:
+    raise SystemExit("missing point or revalidation evidence")
+for row in point_rows:
+    if row["cpu_route_available"] and row["output_equivalent"] is not True:
+        raise SystemExit("route equivalence failure in evidence")
+print(
+    f"validated evidence: {len(point_rows)} point rows, "
+    f"{len(revalidation_rows)} revalidation rows"
+)
+PY
+
+echo "[E0] reconstructing Static / Periodic / AlpenCat / Oracle"
+python3 "$ROOT/experiments/convergence/analyze_economics.py" \
+  "$OUT_DIR" \
+  --calls-per-point "$CALLS_PER_POINT" \
+  | tee "$OUT_DIR/economics-summary.md"
+
+echo "[E0] complete: $OUT_DIR"

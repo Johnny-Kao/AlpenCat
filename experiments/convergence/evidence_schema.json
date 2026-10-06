@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AlpenCat Convergence Evidence Record",
+  "type": "object",
+  "required": ["record_type", "schema_version", "workload", "regime"],
+  "properties": {
+    "record_type": {"enum": ["point", "revalidation"]},
+    "schema_version": {"const": 1},
+    "workload": {"type": "string"},
+    "regime": {"type": "string"},
+    "work_items": {"type": "integer", "minimum": 1},
+    "weight": {"type": "number", "exclusiveMinimum": 0},
+    "parallelism": {"type": "integer", "minimum": 1},
+    "serial_samples_ns": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1},
+    "cpu_samples_ns": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1}
+      ]
+    },
+    "cpu_route_available": {"type": "boolean"},
+    "output_equivalent": {"type": ["boolean", "null"]},
+    "auto_samples_ns": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1},
+    "auto_backend": {"enum": ["Serial", "Cpu", "Gpu"]},
+    "boundary_stale": {"type": "boolean"},
+    "status": {"type": "string"},
+    "measurement_count": {"type": "integer", "minimum": 0},
+    "revalidation_elapsed_ns": {"type": "integer", "minimum": 0},
+    "published_serial_max_items": {"type": "integer", "minimum": 0}
+  }
+}
