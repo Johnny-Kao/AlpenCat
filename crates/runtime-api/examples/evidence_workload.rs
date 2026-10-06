@@ -194,8 +194,7 @@ fn main() {
                     BackendKind::Gpu => unreachable!(),
                 };
                 let measurement = measure(&runtime, &task, n, mode, repeats);
-                (measurement.actual_backend == backend)
-                    .then(|| median(&measurement.samples_ns))
+                (measurement.actual_backend == backend).then(|| median(&measurement.samples_ns))
             },
         );
         let elapsed = revalidation_start
@@ -206,9 +205,7 @@ fn main() {
             RevalidationStatus::NotStale => "NotStale",
             RevalidationStatus::Published => "Published",
             RevalidationStatus::NoLocalCrossover => "NoLocalCrossover",
-            RevalidationStatus::RouteUnavailable(BackendKind::Serial) => {
-                "RouteUnavailable(Serial)"
-            }
+            RevalidationStatus::RouteUnavailable(BackendKind::Serial) => "RouteUnavailable(Serial)",
             RevalidationStatus::RouteUnavailable(BackendKind::Cpu) => "RouteUnavailable(Cpu)",
             RevalidationStatus::RouteUnavailable(BackendKind::Gpu) => "RouteUnavailable(Gpu)",
             RevalidationStatus::InvalidatedDuringMeasurement => "InvalidatedDuringMeasurement",
