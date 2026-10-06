@@ -11,8 +11,7 @@ use runtime_api::{
 const WORKLOAD: &str = "memory-column-transform-u64";
 const MIN_ITEMS: usize = 4_096;
 const MAX_ITEMS: usize = 4_194_304;
-const VALIDATION_SIZES: [usize; 6] =
-    [4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304];
+const VALIDATION_SIZES: [usize; 6] = [4_096, 16_384, 65_536, 262_144, 1_048_576, 4_194_304];
 
 #[derive(Debug, Clone)]
 struct Point {
@@ -232,16 +231,8 @@ fn discover_interval(
     let started = Instant::now();
     let mut cache = BTreeMap::new();
     let start = start_boundary.clamp(MIN_ITEMS, MAX_ITEMS);
-    let first = get_point(
-        &mut cache,
-        runtime,
-        task,
-        input,
-        start,
-        repeats,
-        max_points,
-    )
-    .expect("first interval probe point");
+    let first = get_point(&mut cache, runtime, task, input, start, repeats, max_points)
+        .expect("first interval probe point");
 
     if first.cpu_ns.is_none() {
         return discovery("CpuUnavailable", None, None, started, cache);
@@ -255,25 +246,13 @@ fn discover_interval(
             if next == current {
                 break None;
             }
-            let Some(point) = get_point(
-                &mut cache,
-                runtime,
-                task,
-                input,
-                next,
-                repeats,
-                max_points,
-            ) else {
+            let Some(point) =
+                get_point(&mut cache, runtime, task, input, next, repeats, max_points)
+            else {
                 break None;
             };
             if point.cpu_ns.is_none() {
-                return discovery(
-                    "CpuUnavailable",
-                    Some(last_serial),
-                    None,
-                    started,
-                    cache,
-                );
+                return discovery("CpuUnavailable", Some(last_serial), None, started, cache);
             }
             if point.winner() == BackendKind::Cpu {
                 break Some(next);
@@ -325,13 +304,7 @@ fn discover_interval(
         match lower {
             Some(lower) => (Some(lower), lowest_cpu),
             None => {
-                return discovery(
-                    "BudgetExhaustedFindingLower",
-                    None,
-                    None,
-                    started,
-                    cache,
-                );
+                return discovery("BudgetExhaustedFindingLower", None, None, started, cache);
             }
         }
     };
@@ -341,23 +314,10 @@ fn discover_interval(
     loop {
         let next = current.saturating_mul(2).min(MAX_ITEMS);
         if next == current {
-            return discovery(
-                "CpuThroughMax",
-                lower_serial_max,
-                None,
-                started,
-                cache,
-            );
+            return discovery("CpuThroughMax", lower_serial_max, None, started, cache);
         }
-        let Some(point) = get_point(
-            &mut cache,
-            runtime,
-            task,
-            input,
-            next,
-            repeats,
-            max_points,
-        ) else {
+        let Some(point) = get_point(&mut cache, runtime, task, input, next, repeats, max_points)
+        else {
             return discovery(
                 "BudgetExhaustedFindingUpper",
                 lower_serial_max,
@@ -420,14 +380,7 @@ fn main() {
     });
     let task = TaskDefinition::new(WORKLOAD);
     let input = build_input(MAX_ITEMS);
-    let result = discover_interval(
-        &runtime,
-        &task,
-        &input,
-        start_boundary,
-        repeats,
-        max_points,
-    );
+    let result = discover_interval(&runtime, &task, &input, start_boundary, repeats, max_points);
 
     let validation: Vec<Point> = VALIDATION_SIZES
         .iter()
@@ -462,8 +415,7 @@ fn main() {
         (Some(lower), "IntervalFound" | "CpuThroughMax") => validation
             .iter()
             .map(|point| {
-                if interval_route(point.work_items, lower, result.upper_cpu_max)
-                    == BackendKind::Cpu
+                if interval_route(point.work_items, lower, result.upper_cpu_max) == BackendKind::Cpu
                 {
                     point.cpu_ns.unwrap_or(point.serial_ns) as f64
                 } else {
