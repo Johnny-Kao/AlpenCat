@@ -10,6 +10,8 @@
 
 use std::sync::OnceLock;
 
+mod revalidation;
+
 use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
@@ -20,6 +22,10 @@ pub use runtime_core::{
 };
 pub use runtime_machine::{GpuDeviceProfile, GpuVendor, HostProfile, MachineProfile};
 pub use runtime_selector::{CPU_MAX_ITEMS, SERIAL_MAX_ITEMS};
+pub use revalidation::{
+    bounded_revalidate_serial_cpu, BoundedRevalidationConfig, LocalBoundaryEvidence,
+    RevalidationStatus, RouteMeasurement, RuntimeRevalidationOutcome,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
@@ -261,6 +267,69 @@ impl Runtime {
         let snapshot = BoundarySnapshot::new(profile, self.resource_epoch.current());
         self.boundary.publish(snapshot);
         snapshot
+    }
+
+    /// Revalidate a stale serial/CPU boundary using only bounded local evidence.
+    ///
+    /// The callback returns a comparable cost for one route at one workload
+    /// size. No measurement is performed unless the published boundary is
+    /// already stale. If the local budget does not observe a crossover, the
+    /// old boundary remains stale and no global fallback is inferred.
+    pub fn revalidate_serial_cpu<F>(
+        &self,
+        config: BoundedRevalidationConfig,
+        measure: F,
+    ) -> RuntimeRevalidationOutcome
+    where
+        F: FnMut(usize, BackendKind) -> u64,
+    {
+        let previous = self.boundary_snapshot();
+        let measurement_epoch = self.resource_epoch.current();
+
+        if previous.resource_epoch == measurement_epoch {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::NotStale,
+                evidence: LocalBoundaryEvidence {
+                    proposed_boundary: None,
+                    measurements: Vec::new(),
+                },
+                published_boundary: None,
+            };
+        }
+
+        let evidence =
+            bounded_revalidate_serial_cpu(previous.profile, config, measure);
+
+        if self.resource_epoch.current() != measurement_epoch {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::InvalidatedDuringMeasurement,
+                evidence,
+                published_boundary: None,
+            };
+        }
+
+        let Some(profile) = evidence.proposed_boundary else {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::NoLocalCrossover,
+                evidence,
+                published_boundary: None,
+            };
+        };
+
+        let published = BoundarySnapshot::new(profile, measurement_epoch);
+        self.boundary.publish(published);
+
+        let status = if self.resource_epoch.current() == measurement_epoch {
+            RevalidationStatus::Published
+        } else {
+            RevalidationStatus::InvalidatedDuringMeasurement
+        };
+
+        RuntimeRevalidationOutcome {
+            status,
+            evidence,
+            published_boundary: Some(published),
+        }
     }
 
     pub fn host_profile(&self) -> HostProfile {
