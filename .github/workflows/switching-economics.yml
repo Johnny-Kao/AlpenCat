@@ -28,7 +28,15 @@ jobs:
           ALPENCAT_CALLS_PER_POINT: "100"
         run: |
           ALPENCAT_W2_OUT="$PWD/switching-evidence-w2" bash experiments/convergence/run_w2_evidence_matrix.sh
+          ALPENCAT_W2_SENSITIVITY_OUT="$PWD/switching-evidence-w2-sensitivity" bash experiments/convergence/run_w2_budget_sensitivity.sh
+          python3 experiments/convergence/analyze_adaptation_economics.py switching-evidence-w2 --sensitivity-root switching-evidence-w2-sensitivity
+          python3 experiments/convergence/analyze_profile_shape.py switching-evidence-w2
           python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w2
+          python3 experiments/convergence/classify_candidate_miss.py \
+            switching-evidence-w2/switching-economics.json \
+            --profile-json switching-evidence-w2/profile-shape.json \
+            --sensitivity-json switching-evidence-w2/adaptation-economics.json \
+            > switching-evidence-w2/candidate-miss.json
 
       - name: Run W3 evidence matrix
         env:
@@ -45,5 +53,6 @@ jobs:
           name: switching-economics-${{ github.run_id }}
           path: |
             switching-evidence-w2/
+            switching-evidence-w2-sensitivity/
             switching-evidence-w3/
           retention-days: 7
