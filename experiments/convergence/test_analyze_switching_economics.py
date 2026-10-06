@@ -18,6 +18,7 @@ class SwitchingEconomicsTests(unittest.TestCase):
             "published_boundary": 2048,
             "oracle_boundary": 2048,
             "status": "Published",
+            "recoverable_regret_per_call_ns": 100.0,
             "realized_execution_gain_per_call_ns": 100.0,
             "revalidation_cost_ns": 1_000.0,
             "near_boundary_preference_consistency_min": 1.0,
@@ -53,6 +54,20 @@ class SwitchingEconomicsTests(unittest.TestCase):
         horizon = result["switch_sensitivity"]["0.0"]["horizons"]["10000"]
         self.assertFalse(horizon["verify_action"])
         self.assertFalse(horizon["confidence_verify_action"])
+
+    def test_opportunity_can_exist_without_candidate_capture(self):
+        row = self.base_row(
+            recoverable_regret_per_call_ns=250.0,
+            realized_execution_gain_per_call_ns=0.0,
+        )
+        result = MODULE.simulate_regime(row, (100,), (0.0,), verify_calls=0)
+        self.assertTrue(result["opportunity_exists"])
+        self.assertFalse(result["candidate_exists"])
+        self.assertTrue(result["candidate_miss"])
+        self.assertEqual(result["candidate_capture_fraction"], 0.0)
+        horizon = result["switch_sensitivity"]["0.0"]["horizons"]["100"]
+        self.assertGreater(horizon["gross_opportunity_gain_ns"], 0.0)
+        self.assertEqual(horizon["gross_candidate_gain_ns"], 0.0)
 
 
 if __name__ == "__main__":
