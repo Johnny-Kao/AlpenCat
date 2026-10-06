@@ -217,6 +217,13 @@ fn main() {
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(3);
+    let size_rotation = env::var("ALPENCAT_SIZE_ROTATION")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let reverse_sizes = env::var("ALPENCAT_SIZE_REVERSE")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
 
     let runtime = Runtime::with_config(RuntimeConfig {
         boundary: BoundaryProfile::new(start_boundary, usize::MAX),
@@ -226,8 +233,17 @@ fn main() {
     let task = TaskDefinition::new(WORKLOAD);
     let input = build_input(SIZES[SIZES.len() - 1]);
 
+    let mut measurement_sizes = SIZES.to_vec();
+    let size_count = measurement_sizes.len();
+    if size_count > 0 {
+        measurement_sizes.rotate_left(size_rotation % size_count);
+    }
+    if reverse_sizes {
+        measurement_sizes.reverse();
+    }
+
     let mut route_rows = Vec::new();
-    for n in SIZES {
+    for n in measurement_sizes {
         let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, repeats);
         assert_eq!(serial.actual_backend, BackendKind::Serial);
         let cpu_available = cpu.actual_backend == BackendKind::Cpu;
