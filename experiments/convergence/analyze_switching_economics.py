@@ -16,6 +16,10 @@ DEFAULT_HORIZONS = (10, 100, 1_000, 10_000)
 DEFAULT_SWITCH_FACTORS = (0.0, 0.25, 0.5, 1.0, 2.0)
 
 
+def opportunity_gain_per_call(row):
+    return max(0.0, float(row["recoverable_regret_per_call_ns"]))
+
+
 def candidate_gain_per_call(row):
     return max(0.0, float(row["realized_execution_gain_per_call_ns"]))
 
@@ -29,6 +33,7 @@ def confidence_proxy(row):
 
 def simulate_regime(row, horizons, switch_factors, verify_calls):
     revalidation = float(row["revalidation_cost_ns"])
+    opportunity_per_call = opportunity_gain_per_call(row)
     gain_per_call = candidate_gain_per_call(row)
     confidence = confidence_proxy(row)
     boundary_changed = row.get("published_boundary") != row.get("start_boundary")
@@ -38,7 +43,16 @@ def simulate_regime(row, horizons, switch_factors, verify_calls):
         "published_boundary": row.get("published_boundary"),
         "oracle_boundary": row.get("oracle_boundary"),
         "status": row.get("status"),
+        "opportunity_gain_per_call_ns": opportunity_per_call,
         "candidate_gain_per_call_ns": gain_per_call,
+        "candidate_capture_fraction": (
+            0.0
+            if opportunity_per_call <= 0.0
+            else min(1.0, gain_per_call / opportunity_per_call)
+        ),
+        "opportunity_exists": opportunity_per_call > 0.0,
+        "candidate_exists": gain_per_call > 0.0,
+        "candidate_miss": opportunity_per_call > 0.0 and gain_per_call <= 0.0,
         "confidence_proxy": confidence,
         "boundary_changed": boundary_changed,
         "switch_sensitivity": {},
@@ -60,6 +74,7 @@ def simulate_regime(row, horizons, switch_factors, verify_calls):
 
         horizons_out = {}
         for horizon in horizons:
+            opportunity_gross = opportunity_per_call * horizon
             gross = gain_per_call * horizon
 
             always_net = gross - revalidation - switch_cost
@@ -81,7 +96,11 @@ def simulate_regime(row, horizons, switch_factors, verify_calls):
             confidence_net = gross - upfront if confidence_gate else 0.0
 
             horizons_out[str(horizon)] = {
+                "gross_opportunity_gain_ns": opportunity_gross,
                 "gross_candidate_gain_ns": gross,
+                "opportunity_profitable_before_candidate_ns": (
+                    opportunity_gross - revalidation
+                ),
                 "always_adapt_net_ns": always_net,
                 "break_even_action": break_even_action,
                 "break_even_net_ns": break_even_net,
