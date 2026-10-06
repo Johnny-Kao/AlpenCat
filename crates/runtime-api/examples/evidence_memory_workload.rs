@@ -260,8 +260,7 @@ fn main() {
 
     let mut route_rows = Vec::new();
     for n in measurement_sizes {
-        let (serial, cpu) =
-            measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
+        let (serial, cpu) = measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
         assert_eq!(serial.actual_backend, BackendKind::Serial);
         let cpu_available = cpu.actual_backend == BackendKind::Cpu;
         let equivalent = cpu_available.then_some(serial.checksum == cpu.checksum);
