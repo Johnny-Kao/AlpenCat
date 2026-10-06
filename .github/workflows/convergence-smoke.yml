@@ -13,7 +13,7 @@ concurrency:
 jobs:
   closed-loop:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -32,3 +32,13 @@ jobs:
 
       - name: Test convergence closed loop
         run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+
+      - name: Run real compute workload across resource envelopes
+        run: bash experiments/convergence/run_resource_envelope.sh
+
+      - name: Upload convergence smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-smoke-${{ github.run_id }}
+          path: convergence-results/
+          retention-days: 7

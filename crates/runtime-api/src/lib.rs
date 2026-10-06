@@ -16,16 +16,16 @@ use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
 
+pub use revalidation::{
+    bounded_revalidate_serial_cpu, BoundedRevalidationConfig, LocalBoundaryEvidence,
+    RevalidationStatus, RouteMeasurement, RuntimeRevalidationOutcome,
+};
 pub use runtime_core::{
     BackendKind, BoundaryProfile, BoundarySnapshot, ExecutionBudget, PublishedBoundary,
     ResourceEpoch, WorkRange,
 };
 pub use runtime_machine::{GpuDeviceProfile, GpuVendor, HostProfile, MachineProfile};
 pub use runtime_selector::{CPU_MAX_ITEMS, SERIAL_MAX_ITEMS};
-pub use revalidation::{
-    bounded_revalidate_serial_cpu, BoundedRevalidationConfig, LocalBoundaryEvidence,
-    RevalidationStatus, RouteMeasurement, RuntimeRevalidationOutcome,
-};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
@@ -297,8 +297,7 @@ impl Runtime {
             };
         }
 
-        let evidence =
-            bounded_revalidate_serial_cpu(previous.profile, config, measure);
+        let evidence = bounded_revalidate_serial_cpu(previous.profile, config, measure);
 
         if self.resource_epoch.current() != measurement_epoch {
             return RuntimeRevalidationOutcome {
