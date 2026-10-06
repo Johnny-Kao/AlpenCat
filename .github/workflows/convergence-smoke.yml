@@ -113,3 +113,18 @@ jobs:
           name: convergence-w2-budget-${{ github.run_id }}
           path: w2-budget-sensitivity/
           retention-days: 7
+
+      - name: Test W2 stability analyzer
+        run: python3 -m unittest experiments/convergence/test_analyze_w2_stability.py -v
+
+      - name: Run W2 stability blocks
+        env:
+          ALPENCAT_STABILITY_REPEATS: "5"
+        run: bash experiments/convergence/run_w2_stability_blocks.sh
+
+      - name: Upload W2 stability blocks
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-w2-stability-${{ github.run_id }}
+          path: w2-stability-blocks/
+          retention-days: 7
