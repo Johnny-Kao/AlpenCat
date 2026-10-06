@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/w2-replication.yml
       - experiments/convergence/analyze_w2_escalation.py
+      - experiments/convergence/analyze_w2_cross_runner_policy.py
+      - experiments/convergence/test_analyze_w2_cross_runner_policy.py
   workflow_dispatch:
 
 jobs:
@@ -60,3 +62,34 @@ jobs:
             w2-replica-${{ matrix.replica }}/escalation-policy.*
             w2-sens-${{ matrix.replica }}/summary.csv
           retention-days: 3
+
+  aggregate-policy:
+    needs: replicate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download replica evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: w2-replica-*-${{ github.run_id }}
+          path: w2-cross-runner-input
+          merge-multiple: false
+
+      - name: Test cross-runner policy simulator
+        run: python3 -m unittest experiments/convergence/test_analyze_w2_cross_runner_policy.py -v
+
+      - name: Simulate economic-gated policy
+        run: |
+          python3 experiments/convergence/analyze_w2_cross_runner_policy.py \
+            w2-cross-runner-input \
+            --output w2-cross-runner-policy
+
+      - name: Upload cross-runner policy simulation
+        uses: actions/upload-artifact@v4
+        with:
+          name: w2-cross-runner-policy-${{ github.run_id }}
+          path: w2-cross-runner-policy/
+          retention-days: 7
