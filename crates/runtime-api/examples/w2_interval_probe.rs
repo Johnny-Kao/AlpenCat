@@ -280,15 +280,9 @@ fn discover_interval(
             if next == current {
                 break Some(0);
             }
-            let Some(point) = get_point(
-                &mut cache,
-                runtime,
-                task,
-                input,
-                next,
-                repeats,
-                max_points,
-            ) else {
+            let Some(point) =
+                get_point(&mut cache, runtime, task, input, next, repeats, max_points)
+            else {
                 break None;
             };
             if point.cpu_ns.is_none() {
