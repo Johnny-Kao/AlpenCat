@@ -80,8 +80,17 @@ def analyze(evidence,sensitivity,warmup_pairs):
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("evidence",type=pathlib.Path); ap.add_argument("sensitivity",type=pathlib.Path); ap.add_argument("--warmup-pairs",type=int,default=2)
     a=ap.parse_args(); static,rows=analyze(a.evidence,a.sensitivity,a.warmup_pairs)
+    def json_safe(value):
+        if isinstance(value, dict):
+            return {k: json_safe(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [json_safe(v) for v in value]
+        if isinstance(value, float) and (math.isinf(value) or math.isnan(value)):
+            return None
+        return value
+
     payload={"schema_version":1,"static_boundary":static,"policy":"p3_plus_max_sentinel","rows":rows}
-    (a.evidence/"escalation-policy.json").write_text(json.dumps(payload,indent=2,sort_keys=True,allow_nan=False)+"\n")
+    (a.evidence/"escalation-policy.json").write_text(json.dumps(json_safe(payload),indent=2,sort_keys=True,allow_nan=False)+"\n")
     fields=list(rows[0].keys())
     with (a.evidence/"escalation-policy.csv").open("w",newline="") as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
