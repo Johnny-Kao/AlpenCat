@@ -56,6 +56,21 @@ pub struct LocalBoundaryEvidence {
     pub measurements: Vec<RouteMeasurement>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevalidationStatus {
+    NotStale,
+    Published,
+    NoLocalCrossover,
+    InvalidatedDuringMeasurement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeRevalidationOutcome {
+    pub status: RevalidationStatus,
+    pub evidence: LocalBoundaryEvidence,
+    pub published_boundary: Option<runtime_core::BoundarySnapshot>,
+}
+
 fn measure_point<F>(work_items: usize, measure: &mut F) -> RouteMeasurement
 where
     F: FnMut(usize, BackendKind) -> u64,
