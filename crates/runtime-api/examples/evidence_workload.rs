@@ -67,7 +67,10 @@ fn measure(
             actual_backend = backend;
             result_checksum = checksum(&values);
         } else {
-            assert_eq!(backend, actual_backend, "backend changed within one measurement");
+            assert_eq!(
+                backend, actual_backend,
+                "backend changed within one measurement"
+            );
             assert_eq!(
                 checksum(&values),
                 result_checksum,
