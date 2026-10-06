@@ -110,8 +110,11 @@ def analyze(records, calls_per_point):
                 static_cost, static_route = selected_cost(row, static_boundary)
                 periodic_cost, periodic_route = selected_cost(row, periodic_boundary)
                 oracle, oracle_route = oracle_cost(row)
-                alpencat = median(row["auto_samples_ns"])
                 alpencat_route = row["auto_backend"]
+                if alpencat_route == "Cpu" and row.get("cpu_samples_ns") is not None:
+                    alpencat = median(row["cpu_samples_ns"])
+                else:
+                    alpencat = median(row["serial_samples_ns"])
 
                 for name, cost, route in (
                     ("Static", static_cost, static_route),
