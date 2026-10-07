@@ -39,6 +39,7 @@ jobs:
           python3 -m unittest experiments/convergence/test_analyze_opportunistic_evidence.py -v
           python3 -m unittest experiments/convergence/test_analyze_unresolved_opportunistic.py -v
           python3 -m unittest experiments/convergence/test_analyze_generic_policy_state_machine.py -v
+          python3 -m unittest experiments/convergence/test_analyze_event_driven_opportunistic.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -77,6 +78,8 @@ jobs:
           python3 experiments/convergence/analyze_unresolved_opportunistic.py \
             switching-evidence-w2
           python3 experiments/convergence/analyze_generic_policy_state_machine.py \
+            switching-evidence-w2
+          python3 experiments/convergence/analyze_event_driven_opportunistic.py \
             switching-evidence-w2
 
       - name: Run W3 evidence matrix
