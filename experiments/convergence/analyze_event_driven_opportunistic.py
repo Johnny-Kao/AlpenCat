@@ -33,7 +33,7 @@ def route_costs(point):
     return median(serial), median(cpu)
 
 
-def one_sample_decision(bound_row, target_point, remaining_calls):
+def one_sample_decision(bound_row, target_point, remaining_target_calls):
     direction = bound_row.get("direction")
     serial, cpu = route_costs(target_point)
     if serial is None or cpu is None:
@@ -61,7 +61,7 @@ def one_sample_decision(bound_row, target_point, remaining_calls):
     # the realized regret over the remaining horizon, that is the maximum
     # value this sample could unlock. Runtime policy must replace this with an
     # observable bound before deployment.
-    info_value_ceiling = realized_regret * max(0.0, float(remaining_calls))
+    info_value_ceiling = realized_regret * max(0.0, float(remaining_target_calls))
     incremental_sample_cost = max(0.0, alternate)
 
     return {
@@ -74,7 +74,7 @@ def one_sample_decision(bound_row, target_point, remaining_calls):
         "stale_route_cost_ns": stale,
         "alternate_route_cost_ns": alternate,
         "realized_regret_per_call_ns": realized_regret,
-        "remaining_calls": float(remaining_calls),
+        "remaining_target_calls": float(remaining_target_calls),
         "information_value_ceiling_ns": info_value_ceiling,
         "incremental_sample_cost_ns": incremental_sample_cost,
     }
@@ -122,13 +122,21 @@ def main():
                 continue
 
             horizon = int(horizon_text)
-            row = one_sample_decision(bound_row, point, horizon)
+            total_weight = sum(float(p.get("weight", 1.0)) for p in points)
+            target_fraction = (
+                float(point.get("weight", 1.0)) / total_weight
+                if total_weight > 0.0
+                else 0.0
+            )
+            remaining_target_calls = max(0.0, float(horizon) * target_fraction - 1.0)
+            row = one_sample_decision(bound_row, point, remaining_target_calls)
             row.update(
                 {
                     "regime": regime,
                     "max_points": case.get("max_points"),
                     "horizon": horizon,
                     "target_work_items": int(target_n),
+                    "target_call_fraction": target_fraction,
                     "bound_net_lower_ns": bound_row.get("net_value_lower_bound_ns"),
                     "bound_net_upper_ns": bound_row.get("net_value_upper_bound_ns"),
                 }
