@@ -14,6 +14,7 @@ SPEC.loader.exec_module(MODULE)
 class DemandBridgeValueTests(unittest.TestCase):
     def reval(self):
         return {
+            "status": "NoLocalCrossover",
             "measurement_count": 3,
             "revalidation_elapsed_ns": 300.0,
             "observed_sentinels": [
@@ -44,6 +45,13 @@ class DemandBridgeValueTests(unittest.TestCase):
     def test_long_horizon_can_buy_bridge(self):
         row = MODULE.bridge_value(self.reval(), self.demand(), 100)
         self.assertTrue(row["continue"])
+
+    def test_published_candidate_skips_bridge(self):
+        reval = self.reval()
+        reval["status"] = "Published"
+        row = MODULE.bridge_value(reval, self.demand(), 1000)
+        self.assertFalse(row["continue"])
+        self.assertEqual(row["reason"], "bridge-not-applicable")
 
     def test_no_unresolved_demand_stops(self):
         demand = [
