@@ -25,6 +25,7 @@ jobs:
           python3 -m unittest experiments/convergence/test_analyze_sentinel_escalation.py -v
           python3 -m unittest experiments/convergence/test_analyze_sentinel_marginal.py -v
           python3 -m unittest experiments/convergence/test_analyze_generic_policy_upper_bound.py -v
+          python3 -m unittest experiments/convergence/test_benchmark_next_sentinel_estimators.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -47,6 +48,8 @@ jobs:
           python3 experiments/convergence/analyze_sentinel_marginal.py \
             switching-evidence-w2/sentinel-escalation.json
           python3 experiments/convergence/analyze_generic_policy_upper_bound.py \
+            switching-evidence-w2/sentinel-escalation.json
+          python3 experiments/convergence/benchmark_next_sentinel_estimators.py \
             switching-evidence-w2/sentinel-escalation.json
 
       - name: Run W3 evidence matrix
