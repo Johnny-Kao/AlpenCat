@@ -28,17 +28,9 @@ def index_opportunistic(opportunistic):
 
 
 def choose_unresolved_strategy(rows):
-    if not rows:
-        return "defer"
-    best = min(
-        rows,
-        key=lambda row: min(
-            row["stay_loss_ns"],
-            row["dedicated_probe_cost_ns"],
-            row["opportunistic_loss_ns"],
-        ),
-    )
-    return best["best_strategy"]
+    # Do not select an opportunistic sampling configuration post hoc.
+    # Until a sampling policy is independently justified, unresolved means defer.
+    return "defer"
 
 
 def decide_path(switching_regime, bridge_horizon=None, opportunistic_rows=None):
