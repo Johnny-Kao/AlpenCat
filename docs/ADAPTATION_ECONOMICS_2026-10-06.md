@@ -347,3 +347,75 @@ Serial, n > upper
 If two boundaries repeatedly recover nearly all of the Oracle gap while one boundary leaves material regret, A3 is supported without requiring a predictor, lookup table, or ML model.
 
 If the interval also fails, do not keep adding boundaries mechanically; revisit the workload key and resource-state representation.
+
+
+## 12. Generic-first portability constraint
+
+The first production-worthy adaptation policy must be vendor-agnostic.
+
+Generic policy MAY consume only measured or abstract runtime evidence such as:
+
+- observed route execution cost;
+- revalidation/probe cost;
+- switching and verification cost;
+- confidence / preference consistency;
+- expected remaining horizon;
+- resource-state transitions;
+- observed sentinel coverage;
+- recoverable regret.
+
+Generic policy MUST NOT branch on:
+
+- CPU vendor;
+- CPU model;
+- vendor/model whitelists;
+- fixed Intel/AMD/Apple-specific thresholds;
+- hard-coded per-model probe budgets.
+
+Specialization is a later optimization layer. A platform/vendor adapter may provide better signals, priors, or cheaper observation, but should not replace the economic control law.
+
+The intended ladder is:
+
+~~~
+Static
+  -> Generic AlpenCat
+  -> Platform-aware AlpenCat
+  -> Vendor-optimized AlpenCat
+  -> Machine-experienced AlpenCat
+~~~
+
+Cross-machine validation should therefore ask:
+
+> Can the same vendor-agnostic policy reach economically sensible decisions from different local measurements?
+
+It should not ask for separate Intel/AMD policy constants unless the generic abstraction is first shown to be insufficient.
+
+## 13. Marginal sentinel stopping
+
+A one-sided local miss does not justify unlimited probing.
+
+For sentinel step i -> i+1 define:
+
+~~~
+Delta_G = additional recoverable gain per future relevant call
+Delta_C = additional probe cost
+H       = expected remaining relevant calls
+~~~
+
+Continue deeper only when:
+
+~~~
+H * Delta_G > Delta_C
+~~~
+
+This is a research criterion, not yet an online estimator.
+
+Current W2 evidence shows why the distinction matters:
+
+- one extra sentinel can add cost without adding recoverable value;
+- a later sentinel can expose a materially larger safe observed envelope;
+- probing beyond full captured opportunity adds no value.
+
+Therefore a fixed p3/p5/p6 budget is not the target policy. The target is an economically stopped, vendor-agnostic sentinel search.
+
+The hindsight upper-bound analyzer is explicitly an offline benchmark envelope. It must not be treated as a deployable decision rule because it uses realized post-hoc marginal gain.
