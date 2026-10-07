@@ -8,6 +8,7 @@ on:
     paths:
       - "experiments/convergence/*.py"
       - "crates/runtime-api/examples/evidence_memory_workload.rs"
+      - "crates/runtime-api/examples/evidence_mixed_workload.rs"
       - ".github/workflows/switching-economics.yml"
 
 jobs:
@@ -29,6 +30,7 @@ jobs:
           python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy.py -v
           python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy_v2.py -v
           python3 -m unittest experiments/convergence/test_analyze_demand_bridge_value.py -v
+          python3 -m unittest experiments/convergence/test_analyze_demand_bridge_control.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -69,6 +71,7 @@ jobs:
         run: |
           ALPENCAT_W3_OUT="$PWD/switching-evidence-w3" bash experiments/convergence/run_w3_evidence_matrix.sh
           python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w3
+          python3 experiments/convergence/analyze_demand_bridge_control.py switching-evidence-w3
 
       - name: Upload switching economics evidence
         uses: actions/upload-artifact@v4
