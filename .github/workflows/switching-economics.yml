@@ -37,6 +37,7 @@ jobs:
           python3 -m unittest experiments/convergence/test_analyze_demand_bridge_control.py -v
           python3 -m unittest experiments/convergence/test_analyze_demand_bridge_bounds.py -v
           python3 -m unittest experiments/convergence/test_analyze_opportunistic_evidence.py -v
+          python3 -m unittest experiments/convergence/test_analyze_unresolved_opportunistic.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -71,6 +72,8 @@ jobs:
           python3 experiments/convergence/analyze_demand_bridge_bounds.py \
             switching-evidence-w2-sensitivity switching-evidence-w2
           python3 experiments/convergence/analyze_opportunistic_evidence.py \
+            switching-evidence-w2
+          python3 experiments/convergence/analyze_unresolved_opportunistic.py \
             switching-evidence-w2
 
       - name: Run W3 evidence matrix
