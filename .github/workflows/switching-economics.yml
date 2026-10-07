@@ -6,7 +6,13 @@ on:
     branches:
       - research/convergence-adaptive-compute-sdk
     paths:
-      - "experiments/convergence/*.py"
+      - "experiments/convergence/analyze_adaptation_economics.py"
+      - "experiments/convergence/analyze_switching_economics.py"
+      - "experiments/convergence/classify_candidate_miss.py"
+      - "experiments/convergence/test_analyze_switching_economics.py"
+      - "experiments/convergence/test_classify_candidate_miss.py"
+      - "experiments/convergence/run_w2_evidence_matrix.sh"
+      - "experiments/convergence/run_w3_evidence_matrix.sh"
       - "crates/runtime-api/examples/evidence_memory_workload.rs"
       - "crates/runtime-api/examples/evidence_mixed_workload.rs"
       - ".github/workflows/switching-economics.yml"
