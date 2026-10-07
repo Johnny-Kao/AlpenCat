@@ -1,0 +1,90 @@
+name: Universal Cross-Machine Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: universal-cross-machine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    name: ${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64-1c-5g
+            runner: ubuntu-slim
+          - id: linux-x64-standard
+            runner: ubuntu-24.04
+          - id: linux-arm64-standard
+            runner: ubuntu-24.04-arm
+          - id: macos-arm64-m1
+            runner: macos-15
+          - id: macos-intel
+            runner: macos-15-intel
+          - id: windows-x64
+            runner: windows-2025
+          - id: windows-arm64
+            runner: windows-11-arm
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Run portable universal sweep
+        run: >
+          python experiments/convergence/run_universal_cross_machine.py
+          --out "universal-results/${{ matrix.id }}"
+          --repeats 3
+          --calls-per-point 100
+
+      - name: Upload machine evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-${{ matrix.id }}-${{ github.run_id }}
+          path: universal-results/${{ matrix.id }}
+          retention-days: 7
+          if-no-files-found: warn
+
+  aggregate:
+    name: aggregate
+    needs: sweep
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download machine evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: universal-*-${{ github.run_id }}
+          path: universal-artifacts
+
+      - name: Aggregate cross-machine economics
+        run: |
+          python experiments/convergence/analyze_universal_cross_machine.py universal-artifacts
+          cat universal-artifacts/cross-machine-summary.json
+
+      - name: Upload aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-cross-machine-summary-${{ github.run_id }}
+          path: |
+            universal-artifacts/cross-machine-summary.json
+            universal-artifacts/cross-machine-cases.csv
+          retention-days: 14
