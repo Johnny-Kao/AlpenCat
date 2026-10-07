@@ -29,6 +29,7 @@ jobs:
           python3 -m unittest experiments/convergence/test_benchmark_next_sentinel_estimators.py -v
           python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy.py -v
           python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy_v2.py -v
+          python3 -m unittest experiments/convergence/test_analyze_demand_bridge_value.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -57,6 +58,8 @@ jobs:
           python3 experiments/convergence/analyze_observed_evsi_proxy.py \
             switching-evidence-w2-sensitivity switching-evidence-w2
           python3 experiments/convergence/analyze_observed_evsi_proxy_v2.py \
+            switching-evidence-w2-sensitivity switching-evidence-w2
+          python3 experiments/convergence/analyze_demand_bridge_value.py \
             switching-evidence-w2-sensitivity switching-evidence-w2
 
       - name: Run W3 evidence matrix
