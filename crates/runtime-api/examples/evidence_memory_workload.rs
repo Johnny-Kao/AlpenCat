@@ -270,7 +270,8 @@ fn main() {
         route_rows.push((n, serial, cpu, cpu_available, equivalent));
     }
 
-    let (status, measurement_count, revalidation_elapsed_ns, observed_sentinels_json) = if bootstrap {
+    let (status, measurement_count, revalidation_elapsed_ns, observed_sentinels_json) = if bootstrap
+    {
         let mut boundary = SIZES[SIZES.len() - 1];
         let mut previous = 0;
         for (n, serial, cpu, cpu_available, _) in &route_rows {
@@ -292,7 +293,12 @@ fn main() {
                     }
             })
             .sum();
-        ("Bootstrap", route_rows.len(), bootstrap_cost, "[]".to_string())
+        (
+            "Bootstrap",
+            route_rows.len(),
+            bootstrap_cost,
+            "[]".to_string(),
+        )
     } else {
         runtime.invalidate_resources();
         let start = Instant::now();
