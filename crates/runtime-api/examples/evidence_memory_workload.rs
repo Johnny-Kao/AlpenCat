@@ -310,10 +310,7 @@ fn main() {
                 let costs = paired_costs.entry(n).or_insert_with(|| {
                     let (serial, cpu) =
                         measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
-                    paired_samples.insert(
-                        n,
-                        (serial.samples_ns.clone(), cpu.samples_ns.clone()),
-                    );
+                    paired_samples.insert(n, (serial.samples_ns.clone(), cpu.samples_ns.clone()));
                     (
                         (serial.actual_backend == BackendKind::Serial)
                             .then(|| median(&serial.samples_ns)),
