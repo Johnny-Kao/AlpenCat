@@ -2,6 +2,11 @@ name: Universal Cross-Machine Validation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - ".github/workflows/universal-cross-machine.yml"
 
 permissions:
   contents: read
