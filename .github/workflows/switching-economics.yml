@@ -11,6 +11,10 @@ on:
       - "crates/runtime-api/examples/evidence_mixed_workload.rs"
       - ".github/workflows/switching-economics.yml"
 
+concurrency:
+  group: switching-economics-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   switching-economics:
     runs-on: ubuntu-24.04
