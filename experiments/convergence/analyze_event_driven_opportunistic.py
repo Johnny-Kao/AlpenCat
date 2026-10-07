@@ -106,6 +106,8 @@ def main():
     }
 
     for case in bounds.get("cases", []):
+        if int(case.get("max_points", 0)) != 3:
+            continue
         regime = case["regime"]
         points = points_by_regime.get(regime, [])
         for horizon_text, bound_row in case.get("horizons", {}).items():
