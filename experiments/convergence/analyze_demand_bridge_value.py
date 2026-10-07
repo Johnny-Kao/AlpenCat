@@ -98,9 +98,10 @@ def bridge_value(revalidation, demand_rows, horizon):
     bridge_cost = next_probe_cost * steps
 
     densities = [
-        value
-        for value in (regret_density_ns_per_item(x) for x in sentinels)
-        if value is not None and V1.preferred(x) == direction
+        regret_density_ns_per_item(sentinel)
+        for sentinel in sentinels
+        if regret_density_ns_per_item(sentinel) is not None
+        and V1.preferred(sentinel) == direction
     ]
     if not densities:
         return {
