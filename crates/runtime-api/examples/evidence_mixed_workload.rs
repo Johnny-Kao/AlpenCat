@@ -286,7 +286,8 @@ fn main() {
         route_rows.push((n, serial, cpu, cpu_available, equivalent));
     }
 
-    let (status, measurement_count, revalidation_elapsed_ns) = if bootstrap {
+    let (status, measurement_count, revalidation_elapsed_ns, observed_sentinels_json) = if bootstrap
+    {
         let mut boundary = SIZES[SIZES.len() - 1];
         let mut previous = 0;
         for (n, serial, cpu, cpu_available, _) in &route_rows {
@@ -308,7 +309,12 @@ fn main() {
                     }
             })
             .sum();
-        ("Bootstrap", route_rows.len(), bootstrap_cost)
+        (
+            "Bootstrap",
+            route_rows.len(),
+            bootstrap_cost,
+            "[]".to_string(),
+        )
     } else {
         runtime.invalidate_resources();
         let start = Instant::now();
@@ -333,6 +339,29 @@ fn main() {
             },
         );
         let elapsed = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        let observed_sentinels_json = format!(
+            "[{}]",
+            outcome
+                .evidence
+                .measurements
+                .iter()
+                .map(|measurement| {
+                    format!(
+                        "{{\"work_items\":{},\"serial_cost_ns\":{},\"cpu_cost_ns\":{}}}",
+                        measurement.work_items,
+                        measurement
+                            .serial_cost
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "null".to_string()),
+                        measurement
+                            .cpu_cost
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "null".to_string()),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         let status = match outcome.status {
             RevalidationStatus::NotStale => "NotStale",
             RevalidationStatus::Published => "Published",
@@ -342,12 +371,17 @@ fn main() {
             RevalidationStatus::RouteUnavailable(BackendKind::Gpu) => "RouteUnavailable(Gpu)",
             RevalidationStatus::InvalidatedDuringMeasurement => "InvalidatedDuringMeasurement",
         };
-        (status, outcome.evidence.measurements.len(), elapsed)
+        (
+            status,
+            outcome.evidence.measurements.len(),
+            elapsed,
+            observed_sentinels_json,
+        )
     };
 
     let published = runtime.boundary_snapshot();
     println!(
-        "{{\"record_type\":\"revalidation\",\"schema_version\":1,\"workload\":\"{}\",\"regime\":\"{}\",\"status\":\"{}\",\"measurement_count\":{},\"revalidation_elapsed_ns\":{},\"published_serial_max_items\":{},\"boundary_stale\":{},\"start_boundary\":{}}}",
+        "{{\"record_type\":\"revalidation\",\"schema_version\":1,\"workload\":\"{}\",\"regime\":\"{}\",\"status\":\"{}\",\"measurement_count\":{},\"revalidation_elapsed_ns\":{},\"published_serial_max_items\":{},\"boundary_stale\":{},\"start_boundary\":{},\"observed_sentinels\":{}}}",
         WORKLOAD,
         regime,
         status,
@@ -356,6 +390,7 @@ fn main() {
         published.profile.serial_max_items,
         runtime.boundary_is_stale(),
         start_boundary,
+        observed_sentinels_json,
     );
 
     for (n, serial, cpu, cpu_available, equivalent) in route_rows {
