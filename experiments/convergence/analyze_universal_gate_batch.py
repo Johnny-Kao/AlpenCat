@@ -15,6 +15,23 @@ def load_jsonl(path):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def derive_boundary(points):
+    ordered = sorted(points, key=lambda row: row["work_items"])
+    previous = 0
+    for row in ordered:
+        cpu_samples = row.get("cpu_samples_ns")
+        if cpu_samples is not None and median(cpu_samples) < median(row["serial_samples_ns"]):
+            return previous
+        previous = row["work_items"]
+    return ordered[-1]["work_items"]
+
+
+def selected_samples(row, boundary):
+    if row["work_items"] <= boundary or row.get("cpu_samples_ns") is None:
+        return row["serial_samples_ns"]
+    return row["cpu_samples_ns"]
+
+
 def baseline_features(machine_root, workload_dir):
     baseline = machine_root / workload_dir / "baseline-full.jsonl"
     rows = load_jsonl(baseline)
@@ -27,13 +44,75 @@ def baseline_features(machine_root, workload_dir):
         winners.append("Cpu" if cpu < serial else "Serial")
     cpu_wins = sum(w == "Cpu" for w in winners)
     serial_wins = sum(w == "Serial" for w in winners)
+    boundary = derive_boundary(points)
     return {
+        "baseline_boundary": boundary,
         "baseline_cpu_route_available": bool(cpu_available),
         "baseline_cpu_ever_wins": cpu_wins > 0,
         "baseline_serial_ever_wins": serial_wins > 0,
         "baseline_mixed_preference": cpu_wins > 0 and serial_wins > 0,
         "baseline_cpu_win_points": cpu_wins,
         "baseline_serial_win_points": serial_wins,
+    }
+
+
+def regime_natural_features(machine_root, workload_dir, regime, baseline):
+    base_rows = load_jsonl(machine_root / workload_dir / "baseline-full.jsonl")
+    cur_rows = load_jsonl(machine_root / workload_dir / f"{regime}.jsonl")
+    base_points = {
+        int(r["work_items"]): r
+        for r in base_rows
+        if r.get("record_type") == "point"
+    }
+    cur_points = {
+        int(r["work_items"]): r
+        for r in cur_rows
+        if r.get("record_type") == "point"
+    }
+    boundary = int(baseline["baseline_boundary"])
+    ordered_sizes = sorted(base_points)
+    left = [n for n in ordered_sizes if n <= boundary]
+    right = [n for n in ordered_sizes if n > boundary]
+    neighbors = set()
+    if left:
+        neighbors.add(left[-1])
+    if right:
+        neighbors.add(right[0])
+
+    any_median_outside = False
+    any_disjoint = False
+    near_median_outside = False
+    near_disjoint = False
+    any_slowdown_disjoint = False
+    any_speedup_disjoint = False
+
+    for n in sorted(set(base_points) & set(cur_points)):
+        b = selected_samples(base_points[n], boundary)
+        q = selected_samples(cur_points[n], boundary)
+        bmin, bmax = min(b), max(b)
+        qmin, qmax = min(q), max(q)
+        qmed = median(q)
+
+        median_outside = qmed < bmin or qmed > bmax
+        disjoint = qmax < bmin or qmin > bmax
+        slowdown = qmin > bmax
+        speedup = qmax < bmin
+
+        any_median_outside |= median_outside
+        any_disjoint |= disjoint
+        any_slowdown_disjoint |= slowdown
+        any_speedup_disjoint |= speedup
+        if n in neighbors:
+            near_median_outside |= median_outside
+            near_disjoint |= disjoint
+
+    return {
+        "natural_median_outside_any": any_median_outside,
+        "natural_disjoint_any": any_disjoint,
+        "natural_boundary_median_outside": near_median_outside,
+        "natural_boundary_disjoint": near_disjoint,
+        "natural_slowdown_disjoint_any": any_slowdown_disjoint,
+        "natural_speedup_disjoint_any": any_speedup_disjoint,
     }
 
 
@@ -64,6 +143,11 @@ def load_cases(root):
             else:
                 feature_map[key] = baseline_features(mroot, wdir)
         row.update(feature_map[key])
+        mroot = machine_roots.get(machine)
+        wdir = workload_map.get(workload)
+        regime = row["regime"]
+        if mroot is not None and wdir is not None:
+            row.update(regime_natural_features(mroot, wdir, regime, feature_map[key]))
     return rows
 
 
@@ -130,6 +214,36 @@ def main():
             "v1+baseline-cpu-route-available",
             "generic-history",
             lambda r: v1(r) and bool(r.get("baseline_cpu_route_available")),
+        ),
+        (
+            "v1+natural-median-outside-any",
+            "generic-natural-history",
+            lambda r: v1(r) and bool(r.get("natural_median_outside_any")),
+        ),
+        (
+            "v1+natural-disjoint-any",
+            "generic-natural-history",
+            lambda r: v1(r) and bool(r.get("natural_disjoint_any")),
+        ),
+        (
+            "v1+boundary-natural-median-outside",
+            "generic-natural-history",
+            lambda r: v1(r) and bool(r.get("natural_boundary_median_outside")),
+        ),
+        (
+            "v1+boundary-natural-disjoint",
+            "generic-natural-history",
+            lambda r: v1(r) and bool(r.get("natural_boundary_disjoint")),
+        ),
+        (
+            "v1+natural-slowdown-disjoint",
+            "diagnostic-natural-direction",
+            lambda r: v1(r) and bool(r.get("natural_slowdown_disjoint_any")),
+        ),
+        (
+            "v1+natural-speedup-disjoint",
+            "diagnostic-natural-direction",
+            lambda r: v1(r) and bool(r.get("natural_speedup_disjoint_any")),
         ),
         (
             "v1+exclude-recovery",
