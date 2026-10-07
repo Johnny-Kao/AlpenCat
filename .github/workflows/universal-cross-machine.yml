@@ -1,5 +1,7 @@
 name: Universal Cross-Machine Validation
 
+# candidate-batch: natural-drift-v1
+
 on:
   workflow_dispatch:
   push:
