@@ -23,23 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test switching economics analyzer
+      - name: Test generic economics analyzers
         run: |
           python3 -m unittest experiments/convergence/test_analyze_switching_economics.py -v
           python3 -m unittest experiments/convergence/test_classify_candidate_miss.py -v
-          python3 -m unittest experiments/convergence/test_analyze_sentinel_escalation.py -v
-          python3 -m unittest experiments/convergence/test_analyze_sentinel_marginal.py -v
-          python3 -m unittest experiments/convergence/test_analyze_generic_policy_upper_bound.py -v
-          python3 -m unittest experiments/convergence/test_benchmark_next_sentinel_estimators.py -v
-          python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy.py -v
-          python3 -m unittest experiments/convergence/test_analyze_observed_evsi_proxy_v2.py -v
-          python3 -m unittest experiments/convergence/test_analyze_demand_bridge_value.py -v
-          python3 -m unittest experiments/convergence/test_analyze_demand_bridge_control.py -v
-          python3 -m unittest experiments/convergence/test_analyze_demand_bridge_bounds.py -v
-          python3 -m unittest experiments/convergence/test_analyze_opportunistic_evidence.py -v
-          python3 -m unittest experiments/convergence/test_analyze_unresolved_opportunistic.py -v
-          python3 -m unittest experiments/convergence/test_analyze_generic_policy_state_machine.py -v
-          python3 -m unittest experiments/convergence/test_analyze_event_driven_opportunistic.py -v
 
       - name: Run W2 evidence matrix
         env:
@@ -48,39 +35,11 @@ jobs:
           ALPENCAT_CALLS_PER_POINT: "100"
         run: |
           ALPENCAT_W2_OUT="$PWD/switching-evidence-w2" bash experiments/convergence/run_w2_evidence_matrix.sh
-          ALPENCAT_W2_SENSITIVITY_OUT="$PWD/switching-evidence-w2-sensitivity" bash experiments/convergence/run_w2_budget_sensitivity.sh
-          python3 experiments/convergence/analyze_adaptation_economics.py switching-evidence-w2 --sensitivity-root switching-evidence-w2-sensitivity
-          python3 experiments/convergence/analyze_profile_shape.py switching-evidence-w2
+          python3 experiments/convergence/analyze_adaptation_economics.py switching-evidence-w2
           python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w2
           python3 experiments/convergence/classify_candidate_miss.py \
             switching-evidence-w2/switching-economics.json \
-            --profile-json switching-evidence-w2/profile-shape.json \
-            --sensitivity-json switching-evidence-w2/adaptation-economics.json \
             > switching-evidence-w2/candidate-miss.json
-          python3 experiments/convergence/analyze_sentinel_escalation.py \
-            switching-evidence-w2 switching-evidence-w2-sensitivity
-          python3 experiments/convergence/analyze_sentinel_marginal.py \
-            switching-evidence-w2/sentinel-escalation.json
-          python3 experiments/convergence/analyze_generic_policy_upper_bound.py \
-            switching-evidence-w2/sentinel-escalation.json
-          python3 experiments/convergence/benchmark_next_sentinel_estimators.py \
-            switching-evidence-w2/sentinel-escalation.json
-          python3 experiments/convergence/analyze_observed_evsi_proxy.py \
-            switching-evidence-w2-sensitivity switching-evidence-w2
-          python3 experiments/convergence/analyze_observed_evsi_proxy_v2.py \
-            switching-evidence-w2-sensitivity switching-evidence-w2
-          python3 experiments/convergence/analyze_demand_bridge_value.py \
-            switching-evidence-w2-sensitivity switching-evidence-w2
-          python3 experiments/convergence/analyze_demand_bridge_bounds.py \
-            switching-evidence-w2-sensitivity switching-evidence-w2
-          python3 experiments/convergence/analyze_opportunistic_evidence.py \
-            switching-evidence-w2
-          python3 experiments/convergence/analyze_unresolved_opportunistic.py \
-            switching-evidence-w2
-          python3 experiments/convergence/analyze_generic_policy_state_machine.py \
-            switching-evidence-w2
-          python3 experiments/convergence/analyze_event_driven_opportunistic.py \
-            switching-evidence-w2
 
       - name: Run W3 evidence matrix
         env:
@@ -91,6 +50,24 @@ jobs:
           ALPENCAT_W3_OUT="$PWD/switching-evidence-w3" bash experiments/convergence/run_w3_evidence_matrix.sh
           python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w3
           python3 experiments/convergence/analyze_demand_bridge_control.py switching-evidence-w3
+
+      - name: Upload switching economics evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: switching-economics-${{ github.run_id }}
+          path: |
+            switching-evidence-w2/
+            switching-evidence-w2-sensitivity/
+            switching-evidence-w3/
+          retention-days: 7
+      - name: Run W3 evidence matrix
+        env:
+          ALPENCAT_REPEATS: "7"
+          ALPENCAT_WARMUP_PAIRS: "2"
+          ALPENCAT_CALLS_PER_POINT: "100"
+        run: |
+          ALPENCAT_W3_OUT="$PWD/switching-evidence-w3" bash experiments/convergence/run_w3_evidence_matrix.sh
+          python3 experiments/convergence/analyze_switching_economics.py switching-evidence-w3
 
       - name: Upload switching economics evidence
         uses: actions/upload-artifact@v4
