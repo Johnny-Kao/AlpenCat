@@ -45,7 +45,7 @@ class GenericPolicyStateMachineTests(unittest.TestCase):
             "probe:dedicated-bridge",
         )
 
-    def test_unresolved_can_defer_to_opportunistic(self):
+    def test_unresolved_defers_until_sampling_policy_is_justified(self):
         switching = {
             "opportunity_exists": True,
             "candidate_exists": False,
@@ -59,7 +59,7 @@ class GenericPolicyStateMachineTests(unittest.TestCase):
         }]
         self.assertEqual(
             M.decide_path(switching, {"decision": "unresolved"}, rows),
-            "unresolved:opportunistic",
+            "unresolved:defer",
         )
 
 
