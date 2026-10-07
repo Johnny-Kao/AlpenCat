@@ -303,12 +303,17 @@ fn main() {
         runtime.invalidate_resources();
         let start = Instant::now();
         let mut paired_costs: HashMap<usize, (Option<u64>, Option<u64>)> = HashMap::new();
+        let mut paired_samples: HashMap<usize, (Vec<u64>, Vec<u64>)> = HashMap::new();
         let outcome = runtime.revalidate_serial_cpu(
             BoundedRevalidationConfig::new(revalidation_points, SIZES[0], SIZES[SIZES.len() - 1]),
             |n, backend| {
                 let costs = paired_costs.entry(n).or_insert_with(|| {
                     let (serial, cpu) =
                         measure_interleaved(&runtime, &task, &input, n, warmup_pairs, repeats);
+                    paired_samples.insert(
+                        n,
+                        (serial.samples_ns.clone(), cpu.samples_ns.clone()),
+                    );
                     (
                         (serial.actual_backend == BackendKind::Serial)
                             .then(|| median(&serial.samples_ns)),
@@ -330,8 +335,17 @@ fn main() {
                 .measurements
                 .iter()
                 .map(|measurement| {
+                    let (serial_samples, cpu_samples) = paired_samples
+                        .get(&measurement.work_items)
+                        .map(|(serial, cpu)| {
+                            (
+                                format!("[{}]", samples_json(serial)),
+                                format!("[{}]", samples_json(cpu)),
+                            )
+                        })
+                        .unwrap_or_else(|| ("null".to_string(), "null".to_string()));
                     format!(
-                        "{{\"work_items\":{},\"serial_cost_ns\":{},\"cpu_cost_ns\":{}}}",
+                        "{{\"work_items\":{},\"serial_cost_ns\":{},\"cpu_cost_ns\":{},\"serial_samples_ns\":{},\"cpu_samples_ns\":{}}}",
                         measurement.work_items,
                         measurement
                             .serial_cost
@@ -341,6 +355,8 @@ fn main() {
                             .cpu_cost
                             .map(|value| value.to_string())
                             .unwrap_or_else(|| "null".to_string()),
+                        serial_samples,
+                        cpu_samples,
                     )
                 })
                 .collect::<Vec<_>>()
