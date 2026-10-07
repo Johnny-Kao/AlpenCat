@@ -80,9 +80,10 @@ jobs:
           pattern: universal-*-${{ github.run_id }}
           path: universal-artifacts
 
-      - name: Test universal eligibility gate
+      - name: Test universal eligibility gates
         run: |
           python -m unittest experiments/convergence/test_analyze_universal_eligibility_gate.py -v
+          python -m unittest experiments/convergence/test_analyze_universal_gate_batch.py -v
 
       - name: Aggregate cross-machine economics
         run: |
@@ -90,8 +91,12 @@ jobs:
           python experiments/convergence/analyze_universal_eligibility_gate.py \
             universal-artifacts/cross-machine-cases.csv \
             --out universal-artifacts/universal-eligibility-gate.json
+          python experiments/convergence/analyze_universal_gate_batch.py \
+            universal-artifacts \
+            --out universal-artifacts/universal-gate-batch.json
           cat universal-artifacts/cross-machine-summary.json
           cat universal-artifacts/universal-eligibility-gate.json
+          cat universal-artifacts/universal-gate-batch.json
 
       - name: Upload aggregate
         uses: actions/upload-artifact@v4
@@ -101,4 +106,5 @@ jobs:
             universal-artifacts/cross-machine-summary.json
             universal-artifacts/cross-machine-cases.csv
             universal-artifacts/universal-eligibility-gate.json
+            universal-artifacts/universal-gate-batch.json
           retention-days: 14
