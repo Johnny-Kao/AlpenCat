@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - research/convergence-adaptive-compute-sdk
+    paths:
+      - "crates/runtime-api/**"
+      - "crates/runtime-core/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain*"
+      - "experiments/convergence/*.sh"
+      - ".github/workflows/convergence-smoke.yml"
   workflow_dispatch:
 
 concurrency:
