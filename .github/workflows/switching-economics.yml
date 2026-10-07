@@ -7,6 +7,7 @@ on:
       - research/convergence-adaptive-compute-sdk
     paths:
       - experiments/convergence/analyze_switching_economics.py
+      - crates/runtime-api/examples/evidence_memory_workload.rs
       - experiments/convergence/test_analyze_switching_economics.py
       - .github/workflows/switching-economics.yml
 
