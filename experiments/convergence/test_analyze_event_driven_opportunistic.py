@@ -18,7 +18,7 @@ class EventDrivenOpportunisticTests(unittest.TestCase):
             "cpu_samples_ns": [cpu, cpu, cpu],
         }
 
-    def test_short_remaining_horizon_can_reject_sample(self):
+    def test_short_remaining_target_horizon_can_reject_sample(self):
         row = M.one_sample_decision(
             {"direction": "Serial"},
             self.point(100, 110),
@@ -26,7 +26,7 @@ class EventDrivenOpportunisticTests(unittest.TestCase):
         )
         self.assertFalse(row["sample"])
 
-    def test_long_remaining_horizon_can_accept_sample(self):
+    def test_long_remaining_target_horizon_can_accept_sample(self):
         row = M.one_sample_decision(
             {"direction": "Serial"},
             self.point(100, 110),
