@@ -68,6 +68,14 @@ def target_call_fraction(demand_rows, target_n):
 
 
 def bridge_value(revalidation, demand_rows, horizon):
+    if revalidation.get("status") != "NoLocalCrossover":
+        return {
+            "continue": False,
+            "net_bridge_value_ns": 0.0,
+            "reason": "bridge-not-applicable",
+            "revalidation_status": revalidation.get("status"),
+        }
+
     sentinels = list(revalidation.get("observed_sentinels") or [])
     consistency, direction = V1.direction_consistency(sentinels)
     if not sentinels or direction is None:
