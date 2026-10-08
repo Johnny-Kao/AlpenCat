@@ -28,6 +28,35 @@ class UniversalGateBatchTests(unittest.TestCase):
     def test_v1_keeps_multicore_transition(self):
         self.assertTrue(M.v1(self.row()))
 
+    def test_economic_slowdown_requires_exposure_above_last_known_cost(self):
+        rows = [
+            {
+                "machine_id": "m",
+                "workload": "w",
+                "logical_cpus": "4",
+                "regime": "baseline-full",
+                "revalidation_cost_ns": 100.0,
+                "natural_slowdown_exposure_ns": 0.0,
+            },
+            {
+                "machine_id": "m",
+                "workload": "w",
+                "logical_cpus": "4",
+                "regime": "cpu-pressure",
+                "revalidation_cost_ns": 120.0,
+                "natural_slowdown_exposure_ns": 90.0,
+            },
+            {
+                "machine_id": "m",
+                "workload": "w",
+                "logical_cpus": "4",
+                "regime": "memory-light",
+                "revalidation_cost_ns": 130.0,
+                "natural_slowdown_exposure_ns": 110.0,
+            },
+        ]
+        self.assertEqual(M.economic_slowdown_mask(rows), {2})
+
 
 if __name__ == "__main__":
     unittest.main()
