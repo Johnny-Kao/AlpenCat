@@ -3,7 +3,6 @@ use runtime_api::{
     RevalidationStatus, Runtime, RuntimeConfig, TaskDefinition, WorkRange,
 };
 
-
 #[test]
 fn fresh_boundary_revalidation_is_a_zero_measurement_noop() {
     let runtime = Runtime::with_config(RuntimeConfig {
