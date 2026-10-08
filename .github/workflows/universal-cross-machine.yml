@@ -1,6 +1,6 @@
 name: Universal Cross-Machine Validation
 
-# candidate-batch: natural-drift-v1
+# candidate-batch: compressed-finalists-v1
 
 on:
   workflow_dispatch:
