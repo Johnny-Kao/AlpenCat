@@ -116,6 +116,35 @@ def regime_natural_features(machine_root, workload_dir, regime, baseline):
     }
 
 
+def natural_slowdown_exposure(machine_root, workload_dir, regime, baseline, calls_per_point=100):
+    base_rows = load_jsonl(machine_root / workload_dir / "baseline-full.jsonl")
+    cur_rows = load_jsonl(machine_root / workload_dir / f"{regime}.jsonl")
+    base_points = {
+        int(r["work_items"]): r
+        for r in base_rows
+        if r.get("record_type") == "point"
+    }
+    cur_points = {
+        int(r["work_items"]): r
+        for r in cur_rows
+        if r.get("record_type") == "point"
+    }
+    boundary = int(baseline["baseline_boundary"])
+    exposure = 0.0
+    for n in sorted(set(base_points) & set(cur_points)):
+        b = selected_samples(base_points[n], boundary)
+        q = selected_samples(cur_points[n], boundary)
+        weight = float(cur_points[n].get("weight", 1.0)) * calls_per_point
+        exposure += max(0.0, median(q) - median(b)) * weight
+    return exposure
+
+
+def economics_regimes(machine_root, workload_dir):
+    data = json.loads((machine_root / workload_dir / "economics-summary.json").read_text())
+    workload = next(iter(data["workloads"].values()))
+    return workload["regimes"]
+
+
 def load_cases(root):
     csv_path = root / "cross-machine-cases.csv"
     with csv_path.open(newline="") as f:
@@ -148,6 +177,11 @@ def load_cases(root):
         regime = row["regime"]
         if mroot is not None and wdir is not None:
             row.update(regime_natural_features(mroot, wdir, regime, feature_map[key]))
+            row["natural_slowdown_exposure_ns"] = natural_slowdown_exposure(
+                mroot, wdir, regime, feature_map[key]
+            )
+            econ = economics_regimes(mroot, wdir)[regime]
+            row["revalidation_cost_ns"] = float(econ["calibration_ns"]["AlpenCat"])
     return rows
 
 
@@ -163,6 +197,37 @@ def v1(row):
     return cpus(row) > 1 and row["regime"] != "baseline-full"
 
 
+REGIME_ORDER = {
+    "baseline-full": 0,
+    "cpu-pressure": 1,
+    "memory-light": 2,
+    "memory-heavy": 3,
+    "combined": 4,
+    "recovery": 5,
+}
+
+
+def economic_slowdown_mask(rows):
+    eligible_ids = set()
+    grouped = {}
+    for i, row in enumerate(rows):
+        grouped.setdefault((row["machine_id"], row["workload"]), []).append((i, row))
+    for _, group in grouped.items():
+        group.sort(key=lambda item: REGIME_ORDER.get(item[1]["regime"], 999))
+        last_known_cost = None
+        for i, row in group:
+            regime = row["regime"]
+            if regime == "baseline-full":
+                last_known_cost = float(row["revalidation_cost_ns"])
+                continue
+            if cpus(row) <= 1 or last_known_cost is None:
+                continue
+            if float(row["natural_slowdown_exposure_ns"]) > last_known_cost:
+                eligible_ids.add(i)
+                last_known_cost = float(row["revalidation_cost_ns"])
+    return eligible_ids
+
+
 def evaluate(rows, name, family, eligible_fn):
     eligible = [r for r in rows if eligible_fn(r)]
     skipped = [r for r in rows if not eligible_fn(r)]
@@ -171,6 +236,10 @@ def evaluate(rows, name, family, eligible_fn):
     no_opp_total = len(rows) - total_opp
     skipped_no_opp = sum(not opp(r) for r in skipped)
     eligible_no_opp = sum(not opp(r) for r in eligible)
+    gated_savings = [
+        float(row["savings_pct"]) if eligible_fn(row) else 0.0
+        for row in rows
+    ]
     return {
         "gate": name,
         "family": family,
@@ -187,6 +256,14 @@ def evaluate(rows, name, family, eligible_fn):
             skipped_no_opp / no_opp_total if no_opp_total else 0.0
         ),
         "eligible_no_opportunity_cases": eligible_no_opp,
+        "gated_negative_case_fraction": (
+            sum(value < 0.0 for value in gated_savings) / len(gated_savings)
+            if gated_savings else 0.0
+        ),
+        "gated_median_savings_pct": (
+            statistics.median(gated_savings) if gated_savings else 0.0
+        ),
+        "gated_worst_savings_pct": min(gated_savings, default=0.0),
     }
 
 
@@ -198,7 +275,21 @@ def main():
 
     rows = load_cases(args.root)
 
+    economic_ids = economic_slowdown_mask(rows)
+    row_index = {id(row): i for i, row in enumerate(rows)}
+
     candidates = [
+        ("F0-v1-safe", "finalist-safe", lambda r: v1(r)),
+        (
+            "F1-v1-natural-disjoint",
+            "finalist-balanced",
+            lambda r: v1(r) and bool(r.get("natural_disjoint_any")),
+        ),
+        (
+            "F2-v1-economic-slowdown",
+            "finalist-economic",
+            lambda r: row_index[id(r)] in economic_ids,
+        ),
         ("v1", "generic", lambda r: v1(r)),
         (
             "v1+baseline-cpu-ever-wins",
@@ -301,14 +392,15 @@ def main():
     }
     args.out.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
 
-    print("| Gate | Family | Recall | No-op prune | Eligible | Missed opp |")
-    print("|---|---|---:|---:|---:|---:|")
+    print("| Gate | Family | Recall | No-op prune | Eligible | Missed opp | Worst gated |")
+    print("|---|---|---:|---:|---:|---:|---:|")
     for r in results:
         print(
             f"| {r['gate']} | {r['family']} | "
             f"{100*r['opportunity_recall']:.1f}% | "
             f"{100*r['no_opportunity_prune_fraction']:.1f}% | "
-            f"{r['eligible_case_count']} | {r['missed_opportunity_cases']} |"
+            f"{r['eligible_case_count']} | {r['missed_opportunity_cases']} | "
+            f"{r['gated_worst_savings_pct']:.3f}% |"
         )
 
 
