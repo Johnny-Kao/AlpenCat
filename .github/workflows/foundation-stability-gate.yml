@@ -1,0 +1,150 @@
+name: Foundation Stability Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - ".github/workflows/foundation-stability-gate.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-stability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  correctness:
+    name: correctness-${{ matrix.id }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: linux-x64-standard, runner: ubuntu-24.04, sample: 1 }
+          - { id: linux-x64-standard, runner: ubuntu-24.04, sample: 2 }
+          - { id: linux-x64-1c-5g, runner: ubuntu-slim, sample: 1 }
+          - { id: linux-x64-1c-5g, runner: ubuntu-slim, sample: 2 }
+          - { id: linux-arm64, runner: ubuntu-24.04-arm, sample: 1 }
+          - { id: linux-arm64, runner: ubuntu-24.04-arm, sample: 2 }
+          - { id: macos-m1, runner: macos-15, sample: 1 }
+          - { id: macos-m1, runner: macos-15, sample: 2 }
+          - { id: macos-intel, runner: macos-15-intel, sample: 1 }
+          - { id: macos-intel, runner: macos-15-intel, sample: 2 }
+          - { id: windows-x64, runner: windows-2025, sample: 1 }
+          - { id: windows-x64, runner: windows-2025, sample: 2 }
+          - { id: windows-arm64, runner: windows-11-arm, sample: 1 }
+          - { id: windows-arm64, runner: windows-11-arm, sample: 2 }
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Record host
+        shell: bash
+        run: |
+          echo "id=${{ matrix.id }}"
+          echo "sample=${{ matrix.sample }}"
+          uname -a || true
+          rustc -vV
+          if command -v lscpu >/dev/null 2>&1; then lscpu || true; fi
+          if command -v sysctl >/dev/null 2>&1; then
+            sysctl -n machdep.cpu.brand_string 2>/dev/null || true
+            sysctl -n hw.ncpu 2>/dev/null || true
+          fi
+
+      - name: Runtime core invariants
+        run: cargo test -p runtime-core -- --nocapture
+
+      - name: FastRoute reference equivalence
+        run: cargo test -p runtime-selector -- --nocapture
+
+      - name: Revalidation invariants
+        run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+
+      - name: CPU backend budget invariants
+        run: cargo test -p runtime-cpu-rayon -- --nocapture
+
+  hotpath:
+    name: hotpath-${{ matrix.os }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2, 3, 4]
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+
+      - name: Build current production hot-path benchmark
+        run: cargo build --release --manifest-path benchmarks/x64-hotpath-overhead/Cargo.toml
+
+      - name: Benchmark and enforce gross-regression ceiling
+        shell: bash
+        run: |
+          mkdir -p results
+          benchmarks/x64-hotpath-overhead/target/release/x64-hotpath-overhead | tee results/summary.csv
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+
+          rows = {}
+          for row in csv.DictReader(
+              line for line in Path("results/summary.csv").read_text().splitlines()
+              if "," in line and not line.startswith("demand_counter=")
+          ):
+              rows[row["case"]] = float(row["delta_ns"])
+
+          epoch = rows["epoch_match"]
+          stale_far = rows["stale_far"]
+
+          # Regression ceilings, not optimization targets.
+          # Historical production evidence: epoch-match max ~0.614 ns/call,
+          # stale-far max ~1.123 ns/call. These ceilings deliberately leave
+          # substantial noise headroom and only catch gross regressions.
+          if epoch > 2.0:
+              raise SystemExit(f"epoch_match gross regression: {epoch:.3f} ns/call > 2.0")
+          if stale_far > 3.0:
+              raise SystemExit(f"stale_far gross regression: {stale_far:.3f} ns/call > 3.0")
+          print(f"PASS epoch_match={epoch:.3f} stale_far={stale_far:.3f} ns/call")
+          PY
+
+      - name: Upload hot-path evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: foundation-hotpath-${{ github.run_id }}-${{ matrix.os }}-s${{ matrix.sample }}
+          path: results/
+          retention-days: 14
+
+  foundation-gate:
+    name: foundation-gate
+    needs: [correctness, hotpath]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all foundation jobs
+        env:
+          CORRECTNESS: ${{ needs.correctness.result }}
+          HOTPATH: ${{ needs.hotpath.result }}
+        run: |
+          echo "correctness=$CORRECTNESS"
+          echo "hotpath=$HOTPATH"
+          test "$CORRECTNESS" = "success"
+          test "$HOTPATH" = "success"
+          echo "FOUNDATION_STABILITY_GATE=PASS"
