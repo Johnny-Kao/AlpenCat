@@ -1,5 +1,7 @@
 name: Foundation Stability Gate
 
+# rerun-head: 227a0d2
+
 on:
   workflow_dispatch:
   push:
