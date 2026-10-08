@@ -3,6 +3,33 @@ use runtime_api::{
     RevalidationStatus, Runtime, RuntimeConfig, TaskDefinition, WorkRange,
 };
 
+
+#[test]
+fn fresh_boundary_revalidation_is_a_zero_measurement_noop() {
+    let runtime = Runtime::with_config(RuntimeConfig {
+        boundary: BoundaryProfile::new(1_024, 262_144),
+        ..RuntimeConfig::default()
+    });
+
+    let before = runtime.boundary_snapshot();
+    let mut measurements = 0usize;
+
+    let outcome = runtime.revalidate_serial_cpu(
+        BoundedRevalidationConfig::new(3, 256, 8_192),
+        |_work_items, _backend| {
+            measurements += 1;
+            Some(1)
+        },
+    );
+
+    assert_eq!(outcome.status, RevalidationStatus::NotStale);
+    assert_eq!(measurements, 0);
+    assert!(outcome.evidence.measurements.is_empty());
+    assert_eq!(outcome.published_boundary, None);
+    assert_eq!(runtime.boundary_snapshot(), before);
+    assert!(!runtime.boundary_is_stale());
+}
+
 #[test]
 fn stale_boundary_revalidates_and_changes_real_execution_route() {
     if std::thread::available_parallelism()
