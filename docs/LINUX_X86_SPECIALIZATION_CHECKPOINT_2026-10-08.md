@@ -1,7 +1,8 @@
 # Linux x86 Specialization Checkpoint — 2026-10-08
 
-> Status: BLOCKED pending Foundation Stability Gate
-> Do not start platform/vendor optimization until `docs/FOUNDATION_STABILITY_GATE_2026-10-08.md` passes.
+> Status: FOUNDATION PASS — ready for Linux x86 research
+> Authoritative Foundation Gate: https://github.com/Johnny-Kao/AlpenCat/actions/runs/37869233762
+> Begin with shared Linux x86 signal inventory; Intel/AMD tuning remains deferred.
 
 ## Scope
 
