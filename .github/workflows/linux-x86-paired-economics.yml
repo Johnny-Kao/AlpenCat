@@ -5,6 +5,8 @@ on:
     branches: [research/convergence-adaptive-compute-sdk]
     paths:
       - ".github/workflows/linux-x86-paired-economics.yml"
+      - "experiments/linux_x86_batch/paired_universal.py"
+      - "experiments/linux_x86_batch/analyze_paired.py"
 permissions:
   contents: read
 concurrency:
