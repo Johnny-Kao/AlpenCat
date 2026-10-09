@@ -8,7 +8,7 @@ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 original=module.run_example
 def readpsi(path):
     try:
-        v=pathlib.Path(path).read_text();return {m.group(1):int(m.group(2)) for m in re.finditer(r"(?m)^(some|full) .*?total=(\\d+)",v)}
+        v=pathlib.Path(path).read_text();return {m.group(1):int(m.group(2)) for m in re.finditer(r"(?m)^(some|full) .*?total=(\d+)",v)}
     except OSError as e:return {"unavailable":str(e)}
 def capture(binary,out_path,regime,start_boundary,bootstrap,repeats):
     paths={"/proc/pressure/cpu":"/proc/pressure/cpu","/proc/pressure/memory":"/proc/pressure/memory","/proc/pressure/io":"/proc/pressure/io"}
