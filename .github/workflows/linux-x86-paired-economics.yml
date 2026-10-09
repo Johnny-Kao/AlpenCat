@@ -1,0 +1,55 @@
+name: Linux x86 Paired Economic Evidence
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/linux-x86-paired-economics.yml"
+permissions:
+  contents: read
+concurrency:
+  group: linux-x86-paired-economics-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  evidence:
+    name: ${{ matrix.os }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Frozen oracle and PSI same-run evidence
+        run: |
+          python3 experiments/linux_x86_batch/paired_universal.py --out "x3-results/${{ matrix.os }}-s${{ matrix.sample }}" --repeats 3 --calls-per-point 100
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paired-x3-${{ matrix.os }}-s${{ matrix.sample }}-${{ github.run_id }}
+          path: x3-results/
+          retention-days: 5
+          if-no-files-found: warn
+  aggregate:
+    needs: evidence
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: paired-x3-*-${{ github.run_id }}
+          path: x3-artifacts
+      - name: Pair signals with frozen opportunity
+        run: python3 experiments/linux_x86_batch/analyze_paired.py x3-artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paired-x3-summary-${{ github.run_id }}
+          path: x3-paired-summary.json
+          retention-days: 7
