@@ -1,0 +1,73 @@
+name: Linux x86 Adaptive Batch Inventory
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/linux-x86-adaptive-batch.yml"
+      - "experiments/linux_x86_batch/**"
+permissions:
+  contents: read
+concurrency:
+  group: linux-x86-adaptive-batch-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  probe:
+    name: ${{ matrix.os }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include:
+          - { os: ubuntu-24.04, sample: 1 }
+          - { os: ubuntu-24.04, sample: 2 }
+          - { os: ubuntu-24.04, sample: 3 }
+          - { os: ubuntu-24.04, sample: 4 }
+          - { os: ubuntu-24.04, sample: 5 }
+          - { os: ubuntu-24.04, sample: 6 }
+          - { os: ubuntu-24.04, sample: 7 }
+          - { os: ubuntu-24.04, sample: 8 }
+          - { os: ubuntu-22.04, sample: 1 }
+          - { os: ubuntu-22.04, sample: 2 }
+          - { os: ubuntu-22.04, sample: 3 }
+          - { os: ubuntu-22.04, sample: 4 }
+          - { os: ubuntu-22.04, sample: 5 }
+          - { os: ubuntu-22.04, sample: 6 }
+          - { os: ubuntu-22.04, sample: 7 }
+          - { os: ubuntu-22.04, sample: 8 }
+          - { os: ubuntu-slim, sample: 1 }
+          - { os: ubuntu-slim, sample: 2 }
+          - { os: ubuntu-slim, sample: 3 }
+          - { os: ubuntu-slim, sample: 4 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory and bounded transitions
+        run: |
+          python3 experiments/linux_x86_batch/probe.py --out batch-results --id "${{ matrix.os }}-s${{ matrix.sample }}" --duration 2
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86-${{ matrix.os }}-s${{ matrix.sample }}-${{ github.run_id }}
+          path: batch-results/
+          if-no-files-found: warn
+          retention-days: 3
+  aggregate:
+    if: always()
+    needs: probe
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: linux-x86-*-${{ github.run_id }}
+          path: all-probes
+      - name: Aggregate
+        run: python3 experiments/linux_x86_batch/aggregate.py all-probes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86-batch-summary-${{ github.run_id }}
+          path: batch-summary.json
+          retention-days: 7
