@@ -1,11 +1,6 @@
 name: Linux x86 Adaptive Batch Inventory
 on:
   workflow_dispatch:
-  push:
-    branches: [research/convergence-adaptive-compute-sdk]
-    paths:
-      - ".github/workflows/linux-x86-adaptive-batch.yml"
-      - "experiments/linux_x86_batch/**"
 permissions:
   contents: read
 concurrency:
