@@ -16,6 +16,8 @@ for machine in root.rglob("hardware-manifest.json"):
                     signal[source]=(after["some"]-before["some"])*1000/p["elapsed_ns"]
             rows.append({"machine":machine.parent.name,"workload":w,"regime":row["regime"],"opportunity":float(row["recoverable_ns_vs_static"])>0,"savings_pct":float(row["alpencat_savings_pct_vs_static"]),"signal":signal})
 if not rows:raise SystemExit("NO PAIRED EVIDENCE")
+if not any(x["signal"].get("/proc/pressure/cpu") is not None for x in rows):
+    raise SystemExit("INVALID X3: paired rows exist but CPU PSI counters were not captured")
 op=[x for x in rows if x["opportunity"]];nop=[x for x in rows if not x["opportunity"]]
 summary={"paired_rows":len(rows),"runner_count":len({x["machine"] for x in rows}),"opportunities":len(op),"no_opportunities":len(nop),"signals":{},"decision":"Descriptive paired evidence only; no thresholds fitted or policy change."}
 for s in ("/proc/pressure/cpu","/proc/pressure/memory","/proc/pressure/io"):
