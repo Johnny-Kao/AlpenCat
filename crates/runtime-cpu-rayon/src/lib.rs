@@ -130,27 +130,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn same_budget_reuses_pool() {
+    fn same_budget_reuses_pool_when_parallelism_exists() {
         let adapter = CpuAdapter::default();
         let range = WorkRange::new(0, 4096);
         let budget = ExecutionBudget::new(2);
+        let effective = adapter.effective_parallelism(budget);
+        let expected_pools = usize::from(effective > 1);
 
         adapter.map(range, budget, |index| index);
-        assert_eq!(adapter.cached_pool_count(), 1);
+        assert_eq!(adapter.cached_pool_count(), expected_pools);
 
         adapter.map(range, budget, |index| index);
-        assert_eq!(adapter.cached_pool_count(), 1);
+        assert_eq!(adapter.cached_pool_count(), expected_pools);
     }
 
     #[test]
-    fn different_budgets_get_distinct_cached_pools() {
+    fn distinct_effective_parallelism_gets_distinct_cached_pools() {
         let adapter = CpuAdapter::default();
         let range = WorkRange::new(0, 4096);
+        let budgets = [ExecutionBudget::new(2), ExecutionBudget::new(3)];
 
-        adapter.map(range, ExecutionBudget::new(2), |index| index);
-        adapter.map(range, ExecutionBudget::new(3), |index| index);
+        for budget in budgets {
+            adapter.map(range, budget, |index| index);
+        }
 
-        assert_eq!(adapter.cached_pool_count(), 2);
+        let mut effective = budgets
+            .into_iter()
+            .map(|budget| adapter.effective_parallelism(budget))
+            .filter(|value| *value > 1)
+            .collect::<Vec<_>>();
+        effective.sort_unstable();
+        effective.dedup();
+
+        assert_eq!(adapter.cached_pool_count(), effective.len());
     }
 
     #[test]
