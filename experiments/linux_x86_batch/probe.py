@@ -9,7 +9,7 @@ def read(path):
 
 def cpuset_count(s):
     try:
-        return sum((int(b)-int(a)+1) if "-" in p for p in s.split(",") for a,b in ([p.split("-",1)] if "-" in p else [(p,p)]))
+        return sum(int(b)-int(a)+1 for p in s.split(",") for a,b in ([p.split("-",1)] if "-" in p else [(p,p)]))
     except Exception: return None
 
 def cgroup_mount():
