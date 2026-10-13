@@ -1,0 +1,48 @@
+name: Universal v0.1 Preview Release Gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/universal-v0_1-preview-gate.yml"
+permissions:
+  contents: read
+concurrency:
+  group: universal-v0_1-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Public API tests
+        run: cargo test -p runtime-api
+      - name: Runnable user quickstart
+        run: cargo run -p runtime-api --example universal_quickstart
+      - name: Lints
+        run: cargo clippy -p runtime-api --all-targets -- -D warnings
+  gate:
+    if: always()
+    needs: smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Release scope gate
+        env:
+          RESULT: ${{ needs.smoke.result }}
+        run: |
+          test "$RESULT" = success
+          echo "UNIVERSAL_V0_1_PREVIEW=PASS"
+          echo "EXPLICIT_INVALIDATION_API=SUPPORTED"
+          echo "OS_NATIVE_AUTOMATIC_ADAPTER=UNVALIDATED"
+          echo "PRODUCTION_READINESS=NOT_CLAIMED"
