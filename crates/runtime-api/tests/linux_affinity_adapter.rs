@@ -116,10 +116,19 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
             }
         })
     };
-    ready_rx.recv_timeout(Duration::from_secs(3)).expect("watcher startup");
-    let watcher = WatcherGuard { stop, handle: Some(watcher) };
+    ready_rx
+        .recv_timeout(Duration::from_secs(3))
+        .expect("watcher startup");
+    let watcher = WatcherGuard {
+        stop,
+        handle: Some(watcher),
+    };
     thread::sleep(Duration::from_millis(30));
-    assert_eq!(events.load(Ordering::SeqCst), 0, "steady state must not invalidate");
+    assert_eq!(
+        events.load(Ordering::SeqCst),
+        0,
+        "steady state must not invalidate"
+    );
     assert!(!rt.boundary_is_stale());
     set_affinity(&cpus[0].to_string());
     until(Duration::from_secs(3), || {
@@ -148,7 +157,11 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
     drop(watcher);
     let final_epoch = rt.resource_epoch();
     thread::sleep(Duration::from_millis(20));
-    assert_eq!(rt.resource_epoch(), final_epoch, "no post-stop invalidation");
+    assert_eq!(
+        rt.resource_epoch(),
+        final_epoch,
+        "no post-stop invalidation"
+    );
     println!(
         "REAL_LINUX_AFFINITY_TO_EPOCH=PASS events={}",
         events.load(Ordering::SeqCst)
