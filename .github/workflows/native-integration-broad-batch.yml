@@ -1,0 +1,77 @@
+name: Native Integration Broad Batch
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/native-integration-broad-batch.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-integration-broad-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulated:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {id: linux-x64, os: ubuntu-24.04}
+          - {id: linux-arm64, os: ubuntu-24.04-arm}
+          - {id: linux-slim, os: ubuntu-slim}
+          - {id: macos-arm64, os: macos-15}
+          - {id: macos-intel, os: macos-15-intel}
+          - {id: windows-x64, os: windows-2025}
+          - {id: windows-arm64, os: windows-11-arm}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Simulated event -> Runtime epoch -> local revalidation -> recovery/fallback
+        run: cargo test -p runtime-api --test native_event_simulation -- --nocapture
+      - name: Existing frozen end-to-end runtime tests
+        run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+  real-linux-os:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {id: ubuntu22-x64, os: ubuntu-22.04}
+          - {id: ubuntu24-x64, os: ubuntu-24.04}
+          - {id: ubuntu24-arm64, os: ubuntu-24.04-arm}
+          - {id: ubuntu-slim, os: ubuntu-slim}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actual nonprivileged Linux affinity change and restore
+        run: python3 experiments/native_integration/os_transition_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-os-${{ matrix.id }}-${{ github.run_id }}
+          path: native-batch-results/
+          retention-days: 14
+          if-no-files-found: warn
+  gate:
+    if: always()
+    needs: [simulated, real-linux-os]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require code tests and record physical event gap
+        env:
+          SIM: ${{ needs.simulated.result }}
+          OS: ${{ needs.real-linux-os.result }}
+        run: |
+          echo "simulated=$SIM os=$OS"
+          test "$SIM" = success
+          test "$OS" = success
+          echo "RUNTIME_SIMULATED_EVENT_E2E=PASS"
+          echo "LINUX_OS_AFFINITY_PROBE=COMPLETE"
+          echo "REAL_HFI_EVENT=UNVALIDATED"
+          echo "OS_EVENT_TO_RUNTIME_ADAPTER=UNVALIDATED"
