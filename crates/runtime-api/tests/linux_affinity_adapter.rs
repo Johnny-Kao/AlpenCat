@@ -5,7 +5,7 @@ use runtime_api::{
 };
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -40,6 +40,24 @@ fn set_affinity(mask: &str) {
         "taskset failed: {}",
         String::from_utf8_lossy(&result.stderr)
     );
+}
+
+struct WatcherGuard {
+    stop: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl Drop for WatcherGuard {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(handle) = self.handle.take() {
+            if !thread::panicking() {
+                handle.join().expect("native observation worker");
+            } else {
+                let _ = handle.join();
+            }
+        }
+    }
 }
 
 struct Restore(String);
@@ -79,12 +97,14 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
     }));
     let stop = Arc::new(AtomicBool::new(false));
     let events = Arc::new(AtomicUsize::new(0));
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let watcher = {
         let rt = Arc::clone(&rt);
         let stop = Arc::clone(&stop);
         let events = Arc::clone(&events);
         thread::spawn(move || {
             let mut last = affinity();
+            ready_tx.send(()).expect("watcher ready receiver");
             while !stop.load(Ordering::SeqCst) {
                 let now = affinity();
                 if now != last {
@@ -96,7 +116,11 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
             }
         })
     };
-    thread::sleep(Duration::from_millis(50));
+    ready_rx.recv_timeout(Duration::from_secs(3)).expect("watcher startup");
+    let watcher = WatcherGuard { stop, handle: Some(watcher) };
+    thread::sleep(Duration::from_millis(30));
+    assert_eq!(events.load(Ordering::SeqCst), 0, "steady state must not invalidate");
+    assert!(!rt.boundary_is_stale());
     set_affinity(&cpus[0].to_string());
     until(Duration::from_secs(3), || {
         events.load(Ordering::SeqCst) >= 1
@@ -121,8 +145,10 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
     });
     assert!(rt.boundary_is_stale());
     assert_eq!(affinity(), original);
-    stop.store(true, Ordering::SeqCst);
-    watcher.join().unwrap();
+    drop(watcher);
+    let final_epoch = rt.resource_epoch();
+    thread::sleep(Duration::from_millis(20));
+    assert_eq!(rt.resource_epoch(), final_epoch, "no post-stop invalidation");
     println!(
         "REAL_LINUX_AFFINITY_TO_EPOCH=PASS events={}",
         events.load(Ordering::SeqCst)
