@@ -1,0 +1,70 @@
+name: Native Probe Research Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - ".github/workflows/native-probe-research-gate.yml"
+      - "tools/native-validation/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-probe-research-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-toolchain:
+    name: probe-toolchain-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: bash -n tools/native-validation/alpencat-native-probe.sh
+      - name: Build HFI CPUID helper
+        run: |
+          cc -O2 -Wall -Wextra -Werror tools/native-validation/cpuid_hfi.c -o /tmp/cpuid_hfi
+          /tmp/cpuid_hfi
+      - name: Build passive thermal Netlink listener
+        run: cc -O2 -Wall -Wextra -Werror tools/native-validation/thermal_event_listener.c -o /tmp/thermal_event_listener
+      - name: Passive native probe smoke
+        run: |
+          tools/native-validation/alpencat-native-probe.sh --listen-seconds 1 --transition-note "research CI smoke (no physical event asserted)"
+          DIR="$(find . -maxdepth 1 -type d -name 'alpencat-native-validation-*' -print -quit)"
+          test -n "$DIR"
+          test -s "$DIR/summary.txt"
+          test -s "$DIR/manifest.txt"
+          test -f "$DIR/thermal_events.jsonl"
+          test -s "$DIR/listener.stderr"
+          echo "NATIVE_TOOLING=PASS; HFI_PHYSICAL_L2=UNVALIDATED"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-probe-smoke-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            alpencat-native-validation-*/
+            alpencat-native-validation-*.tar.gz
+          retention-days: 7
+          if-no-files-found: warn
+
+  gate:
+    needs: native-toolchain
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report exact scope
+        env:
+          TOOLING: ${{ needs.native-toolchain.result }}
+        run: |
+          test "$TOOLING" = success
+          echo "NATIVE_PROBE_TOOLING=PASS"
+          echo "PHYSICAL_INTEL_HFI_L1_L2=UNVALIDATED"
+          echo "NATIVE_RUNTIME_L3_L4=UNVALIDATED"
