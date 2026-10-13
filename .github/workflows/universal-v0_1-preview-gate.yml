@@ -5,6 +5,7 @@ on:
     branches: [research/convergence-adaptive-compute-sdk]
     paths:
       - ".github/workflows/universal-v0_1-preview-gate.yml"
+      - "crates/runtime-api/examples/universal_quickstart.rs"
 permissions:
   contents: read
 concurrency:
