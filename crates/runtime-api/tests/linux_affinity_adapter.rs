@@ -52,7 +52,10 @@ impl Drop for Restore {
 fn until(deadline: Duration, predicate: impl Fn() -> bool) {
     let start = Instant::now();
     while !predicate() {
-        assert!(start.elapsed() < deadline, "OS transition not observed in time");
+        assert!(
+            start.elapsed() < deadline,
+            "OS transition not observed in time"
+        );
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -95,7 +98,9 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
     };
     thread::sleep(Duration::from_millis(50));
     set_affinity(&cpus[0].to_string());
-    until(Duration::from_secs(3), || events.load(Ordering::SeqCst) >= 1);
+    until(Duration::from_secs(3), || {
+        events.load(Ordering::SeqCst) >= 1
+    });
     assert_eq!(affinity(), cpus[0].to_string());
     assert!(rt.boundary_is_stale());
     let result = rt.revalidate_serial_cpu(
@@ -111,10 +116,15 @@ fn actual_linux_affinity_changes_trigger_epoch_and_bounded_revalidation() {
     assert_eq!(result.status, RevalidationStatus::Published);
     assert!(!rt.boundary_is_stale());
     set_affinity(&original);
-    until(Duration::from_secs(3), || events.load(Ordering::SeqCst) >= 2);
+    until(Duration::from_secs(3), || {
+        events.load(Ordering::SeqCst) >= 2
+    });
     assert!(rt.boundary_is_stale());
     assert_eq!(affinity(), original);
     stop.store(true, Ordering::SeqCst);
     watcher.join().unwrap();
-    println!("REAL_LINUX_AFFINITY_TO_EPOCH=PASS events={}", events.load(Ordering::SeqCst));
+    println!(
+        "REAL_LINUX_AFFINITY_TO_EPOCH=PASS events={}",
+        events.load(Ordering::SeqCst)
+    );
 }
