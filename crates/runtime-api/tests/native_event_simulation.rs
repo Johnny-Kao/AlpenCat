@@ -59,9 +59,15 @@ fn native_event_simulation_recovery_and_noop_do_not_force_measurements() {
     assert!(rt.boundary_is_stale());
     let result = rt.revalidate_serial_cpu(
         BoundedRevalidationConfig::new(3, 512, 8192),
-        |_, backend| match backend { BackendKind::Cpu => None, _ => Some(1) },
+        |_, backend| match backend {
+            BackendKind::Cpu => None,
+            _ => Some(1),
+        },
     );
-    assert_eq!(result.status, RevalidationStatus::RouteUnavailable(BackendKind::Cpu));
+    assert_eq!(
+        result.status,
+        RevalidationStatus::RouteUnavailable(BackendKind::Cpu)
+    );
     assert!(rt.boundary_is_stale());
 }
 
