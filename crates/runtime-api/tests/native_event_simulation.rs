@@ -1,6 +1,6 @@
 use runtime_api::{
-    BackendKind, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode,
-    RevalidationStatus, Runtime, RuntimeConfig, TaskDefinition, WorkRange,
+    BackendKind, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode, RevalidationStatus,
+    Runtime, RuntimeConfig, TaskDefinition, WorkRange,
 };
 
 #[test]
@@ -25,10 +25,10 @@ fn native_event_simulation_recovery_and_noop_do_not_force_measurements() {
         ..RuntimeConfig::default()
     });
     let mut n = 0;
-    let fresh = rt.revalidate_serial_cpu(
-        BoundedRevalidationConfig::new(3, 512, 8192),
-        |_, _| { n += 1; Some(1) },
-    );
+    let fresh = rt.revalidate_serial_cpu(BoundedRevalidationConfig::new(3, 512, 8192), |_, _| {
+        n += 1;
+        Some(1)
+    });
     assert_eq!(fresh.status, RevalidationStatus::NotStale);
     assert_eq!(n, 0);
 
@@ -36,17 +36,23 @@ fn native_event_simulation_recovery_and_noop_do_not_force_measurements() {
     let stale_epoch = rt.resource_epoch();
     let result = rt.revalidate_serial_cpu(
         BoundedRevalidationConfig::new(3, 512, 8192),
-        |items, backend| Some(match backend {
-            BackendKind::Serial => items as u64,
-            BackendKind::Cpu => 1500,
-            BackendKind::Gpu => unreachable!(),
-        }),
+        |items, backend| {
+            Some(match backend {
+                BackendKind::Serial => items as u64,
+                BackendKind::Cpu => 1500,
+                BackendKind::Gpu => unreachable!(),
+            })
+        },
     );
     assert_eq!(result.status, RevalidationStatus::Published);
     assert!(!rt.boundary_is_stale());
     assert_eq!(rt.boundary_snapshot().resource_epoch, stale_epoch);
     let task = TaskDefinition::new("native-simulation");
-    let handle = rt.submit_map(&task, WorkRange::new(0, 2000), ExecutionMode::Auto, |i| i + 1).unwrap();
+    let handle = rt
+        .submit_map(&task, WorkRange::new(0, 2000), ExecutionMode::Auto, |i| {
+            i + 1
+        })
+        .unwrap();
     assert_eq!(rt.wait(handle).value, (1..=2000).collect::<Vec<_>>());
 
     rt.invalidate_resources(); // simulated recovery transition, not an actual native event
@@ -71,7 +77,10 @@ fn simultaneous_event_during_measurement_must_not_publish_as_fresh() {
     let out = rt.revalidate_serial_cpu(
         BoundedRevalidationConfig::new(3, 512, 8192),
         |items, backend| {
-            if !once { rt.invalidate_resources(); once = true; }
+            if !once {
+                rt.invalidate_resources();
+                once = true;
+            }
             Some(match backend {
                 BackendKind::Serial => items as u64,
                 BackendKind::Cpu => 1500,
