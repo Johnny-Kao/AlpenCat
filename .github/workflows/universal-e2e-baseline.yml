@@ -1,0 +1,110 @@
+name: Universal End-to-End Baseline Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - ".github/workflows/universal-e2e-baseline.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: universal-e2e-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: runtime-${{ matrix.id }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - { id: linux-x64, os: ubuntu-24.04, sample: 1 }
+          - { id: linux-x64, os: ubuntu-24.04, sample: 2 }
+          - { id: linux-slim, os: ubuntu-slim, sample: 1 }
+          - { id: linux-slim, os: ubuntu-slim, sample: 2 }
+          - { id: linux-arm64, os: ubuntu-24.04-arm, sample: 1 }
+          - { id: linux-arm64, os: ubuntu-24.04-arm, sample: 2 }
+          - { id: macos-arm64, os: macos-15, sample: 1 }
+          - { id: macos-arm64, os: macos-15, sample: 2 }
+          - { id: macos-intel, os: macos-15-intel, sample: 1 }
+          - { id: macos-intel, os: macos-15-intel, sample: 2 }
+          - { id: windows-x64, os: windows-2025, sample: 1 }
+          - { id: windows-x64, os: windows-2025, sample: 2 }
+          - { id: windows-arm64, os: windows-11-arm, sample: 1 }
+          - { id: windows-arm64, os: windows-11-arm, sample: 2 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Runtime core + epoch publication invariants
+        run: cargo test -p runtime-core -- --nocapture
+      - name: Reference-equivalent routing
+        run: cargo test -p runtime-selector -- --nocapture
+      - name: End-to-end invalidation, route, recovery and unavailable fallback
+        run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+      - name: CPU budget and single-core fallback
+        run: cargo test -p runtime-cpu-rayon -- --nocapture
+
+  hotpath:
+    name: hotpath-${{ matrix.os }}-s${{ matrix.sample }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Build release hot-path benchmark
+        run: cargo build --release --manifest-path benchmarks/x64-hotpath-overhead/Cargo.toml
+      - name: Enforce existing gross-regression ceilings
+        shell: bash
+        run: |
+          mkdir -p results
+          benchmarks/x64-hotpath-overhead/target/release/x64-hotpath-overhead | tee results/summary.csv
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+          rows={}
+          for row in csv.DictReader(line for line in Path("results/summary.csv").read_text().splitlines() if "," in line and not line.startswith("demand_counter=")):
+              rows[row["case"]]=float(row["delta_ns"])
+          assert rows["epoch_match"] <= 2.0, rows
+          assert rows["stale_far"] <= 3.0, rows
+          print("PASS: existing Foundation hotpath gross-regression ceilings")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: universal-e2e-hotpath-${{ matrix.os }}-s${{ matrix.sample }}-${{ github.run_id }}
+          path: results/summary.csv
+          retention-days: 14
+
+  gate:
+    name: universal-portable-baseline-gate
+    needs: [runtime, hotpath]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all portable runtime and hot-path jobs
+        env:
+          RUNTIME: ${{ needs.runtime.result }}
+          HOTPATH: ${{ needs.hotpath.result }}
+        run: |
+          echo "runtime=$RUNTIME"
+          echo "hotpath=$HOTPATH"
+          test "$RUNTIME" = success
+          test "$HOTPATH" = success
+          echo "PORTABLE_UNIVERSAL_BASELINE_GATE=PASS"
+          echo "NATIVE_EVENT_ADAPTER_E2E=UNVALIDATED"
+          echo "PHYSICAL_SERVER=UNVALIDATED"
