@@ -1,7 +1,7 @@
 //! Minimal runnable Universal v0.1 integration, with explicit invalidation.
 use runtime_api::{
-    BackendKind, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode, Runtime,
-    RuntimeConfig, TaskDefinition, WorkRange,
+    BackendKind, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode, Runtime, RuntimeConfig,
+    TaskDefinition, WorkRange,
 };
 
 fn main() {
