@@ -1,0 +1,46 @@
+name: Linux Real OS to Runtime E2E
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/linux-real-os-runtime-e2e.yml"
+permissions:
+  contents: read
+concurrency:
+  group: linux-real-os-e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {id: ubuntu22-x64, os: ubuntu-22.04}
+          - {id: ubuntu24-x64, os: ubuntu-24.04}
+          - {id: ubuntu24-arm64, os: ubuntu-24.04-arm}
+          - {id: ubuntu-slim, os: ubuntu-slim}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Native integration test with real Linux affinity transition
+        run: cargo test -p runtime-api --test linux_affinity_adapter -- --nocapture
+      - name: No regression to frozen boundary contract
+        run: cargo test -p runtime-api --test convergence_runtime -- --nocapture
+  gate:
+    if: always()
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce native test success and scope
+        env:
+          NATIVE: ${{ needs.native.result }}
+        run: |
+          test "$NATIVE" = success
+          echo "REAL_LINUX_AFFINITY_TO_RUNTIME_EPOCH_E2E=PASS_ON_ELIGIBLE_RUNNERS"
+          echo "INTEL_HFI_NATIVE_EVENT=UNVALIDATED"
