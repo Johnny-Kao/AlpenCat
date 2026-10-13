@@ -5,6 +5,7 @@ on:
     branches: [research/convergence-adaptive-compute-sdk]
     paths:
       - ".github/workflows/linux-real-os-runtime-e2e.yml"
+      - "crates/runtime-api/tests/linux_affinity_adapter.rs"
 permissions:
   contents: read
 concurrency:
