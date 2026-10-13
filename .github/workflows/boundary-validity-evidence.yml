@@ -1,0 +1,64 @@
+name: Boundary Validity Evidence Batch
+on:
+  workflow_dispatch:
+  push:
+    branches: [research/convergence-adaptive-compute-sdk]
+    paths:
+      - ".github/workflows/boundary-validity-evidence.yml"
+permissions:
+  contents: read
+concurrency:
+  group: boundary-validity-evidence-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  matrix:
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - { id: x64-ubuntu22-s1, os: ubuntu-22.04 }
+          - { id: x64-ubuntu22-s2, os: ubuntu-22.04 }
+          - { id: x64-ubuntu24-s1, os: ubuntu-24.04 }
+          - { id: x64-ubuntu24-s2, os: ubuntu-24.04 }
+          - { id: arm64-ubuntu24-s1, os: ubuntu-24.04-arm }
+          - { id: arm64-ubuntu24-s2, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Measure existing runtime evidence
+        run: python3 experiments/convergence/run_universal_cross_machine.py --out "results/${{ matrix.id }}" --repeats 3 --calls-per-point 100
+      - name: Analyze cached boundary validity
+        run: python3 experiments/boundary_validity/analyze.py results --out "results/${{ matrix.id }}/boundary-validity-summary.json"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boundary-validity-${{ matrix.id }}-${{ github.run_id }}
+          path: results/
+          retention-days: 7
+          if-no-files-found: warn
+  aggregate:
+    needs: matrix
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: boundary-validity-*-${{ github.run_id }}
+          path: batch-results
+      - name: Aggregate all evidence
+        run: python3 experiments/boundary_validity/analyze.py batch-results --out batch-summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boundary-validity-batch-summary-${{ github.run_id }}
+          path: |
+            batch-summary.json
+            batch-summary.csv
+          retention-days: 14
