@@ -210,6 +210,33 @@ pub struct TaskResult<T> {
     pub value: T,
 }
 
+/// Portable application-owned resource-change notification handle.
+///
+/// Applications without an operating-system event adapter can signal changes
+/// explicitly. Cloning this handle does not create any background worker.
+#[derive(Debug, Clone)]
+pub struct ResourceNotifier {
+    runtime: std::sync::Arc<Runtime>,
+}
+
+impl ResourceNotifier {
+    pub fn new(runtime: std::sync::Arc<Runtime>) -> Self {
+        Self { runtime }
+    }
+
+    pub fn notify_changed(&self) -> u64 {
+        self.runtime.invalidate_resources()
+    }
+}
+
+/// Read-only runtime state for troubleshooting and SDK integrations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeDiagnostics {
+    pub resource_epoch: u64,
+    pub boundary: BoundarySnapshot,
+    pub boundary_stale: bool,
+}
+
 #[derive(Debug)]
 pub struct Runtime {
     cpu: CpuAdapter,
@@ -248,6 +275,18 @@ impl Runtime {
 
     pub const fn external_parallelism(&self) -> ExternalParallelism {
         self.config.external_parallelism
+    }
+
+    /// Return a non-blocking diagnostic view; concurrent invalidation may
+    /// advance the epoch immediately after this snapshot.
+    pub fn diagnostics(&self) -> RuntimeDiagnostics {
+        let boundary = self.boundary_snapshot();
+        let resource_epoch = self.resource_epoch();
+        RuntimeDiagnostics {
+            resource_epoch,
+            boundary,
+            boundary_stale: resource_epoch != boundary.resource_epoch,
+        }
     }
 
     pub fn resource_epoch(&self) -> u64 {
