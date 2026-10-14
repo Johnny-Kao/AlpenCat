@@ -14,6 +14,22 @@ use crate::{
 ///
 /// `operation` must be repeatable, side-effect-free, and representative of the
 /// caller's production workload. Samples are deliberately not cached.
+pub fn calibrate_elapsed_map<T, F>(
+    runtime: &Runtime,
+    config: BoundedRevalidationConfig,
+    task: &TaskDefinition,
+    operation: F,
+) -> RuntimeRevalidationOutcome
+where
+    T: Send,
+    F: Fn(usize) -> T + Send + Sync,
+{
+    runtime.calibrate_serial_cpu(config, |items, backend| {
+        elapsed_map_cost(runtime, task, &operation, items, backend)
+    })
+}
+
+/// Revalidate a stale boundary using measured execution times.
 pub fn revalidate_elapsed_map<T, F>(
     runtime: &Runtime,
     config: BoundedRevalidationConfig,
@@ -25,22 +41,37 @@ where
     F: Fn(usize) -> T + Send + Sync,
 {
     runtime.revalidate_serial_cpu(config, |items, backend| {
-        let mode = match backend {
-            BackendKind::Serial => ExecutionMode::Serial,
-            BackendKind::Cpu => ExecutionMode::Cpu,
-            BackendKind::Gpu => return None,
-        };
-        let start = Instant::now();
-        let handle = runtime
-            .submit_map(task, WorkRange::new(0, items), mode, &operation)
-            .ok()?;
-        if handle.decision().backend != backend {
-            return None;
-        }
-        let result = runtime.wait(handle);
-        black_box(result.value);
-        Some(start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64)
+        elapsed_map_cost(runtime, task, &operation, items, backend)
     })
+}
+
+/// Measure one actual route, rejecting fallback execution as timing evidence.
+fn elapsed_map_cost<T, F>(
+    runtime: &Runtime,
+    task: &TaskDefinition,
+    operation: &F,
+    items: usize,
+    backend: BackendKind,
+) -> Option<u64>
+where
+    T: Send,
+    F: Fn(usize) -> T + Send + Sync,
+{
+    let mode = match backend {
+        BackendKind::Serial => ExecutionMode::Serial,
+        BackendKind::Cpu => ExecutionMode::Cpu,
+        BackendKind::Gpu => return None,
+    };
+    let start = Instant::now();
+    let handle = runtime
+        .submit_map(task, WorkRange::new(0, items), mode, operation)
+        .ok()?;
+    if handle.decision().backend != backend {
+        return None;
+    }
+    let result = runtime.wait(handle);
+    black_box(result.value);
+    Some(start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64)
 }
 
 /// Whether elapsed calibration actually published a new boundary.
