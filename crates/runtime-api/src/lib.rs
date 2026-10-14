@@ -10,6 +10,7 @@
 
 use std::sync::OnceLock;
 
+mod elapsed_calibration;
 #[cfg(target_os = "linux")]
 mod linux_affinity;
 mod revalidation;
@@ -21,6 +22,7 @@ use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
 
+pub use elapsed_calibration::{published as elapsed_calibration_published, revalidate_elapsed_map};
 pub use revalidation::{
     bounded_revalidate_serial_cpu, BoundedRevalidationConfig, LocalBoundaryEvidence,
     RevalidationStatus, RouteMeasurement, RuntimeRevalidationOutcome,
