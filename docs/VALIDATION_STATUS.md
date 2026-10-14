@@ -1,8 +1,10 @@
 # Validation Status
 
-> Updated: 2026-10-04
+> Historical research summary: 2026-10-04. For v0.4 alpha release evidence (2026-10-14), see [Test Evidence](TEST_EVIDENCE.md).
 
 ## Status
+
+**Release update:** [v0.4.0-alpha](RELEASE_NOTES.md) passed the five-platform SDK integration and convergence gates on 2026-10-14 at commit `f775b528`. The older results below are preserved as historical research measurements, not re-measured v0.4 performance results. Native HFI/CPPC remains open.
 
 | Question | Status |
 | --- | --- |
