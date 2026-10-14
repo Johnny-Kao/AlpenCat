@@ -1,0 +1,38 @@
+name: v0.5 Epoch Lifecycle Research
+on:
+  push:
+    branches: [research/v0.5-adaptation-economics]
+    paths:
+      - 'crates/runtime-api/examples/v05_epoch_lifecycle.rs'
+      - '.github/workflows/v05-epoch-lifecycle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  epoch:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Build lifecycle research example
+        run: cargo build --release -p runtime-api --example v05_epoch_lifecycle
+      - name: Measure real invalidation and revalidation
+        run: |
+          mkdir -p epoch-results
+          for i in 1 2; do
+            target/release/examples/v05_epoch_lifecycle | tee "epoch-results/${{ matrix.os }}-${i}.txt"
+          done
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: epoch-lifecycle-${{ matrix.os }}-${{ github.run_id }}
+          path: epoch-results/
+          retention-days: 14
+          if-no-files-found: warn
