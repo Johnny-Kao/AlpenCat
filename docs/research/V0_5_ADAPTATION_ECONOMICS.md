@@ -120,3 +120,19 @@ Representative Ubuntu 24.04 evidence (21 three-route paired blocks, twice indepe
 These are deliberately simple synthetic kernels; the benchmark fixes a starting boundary, the rotating order reduces systematic bias but is not a fully randomized design, and the per-block best route is an optimistic hindsight oracle rather than a deployable policy. The results support **ITERATE** on measurement/eligibility design with an explicit no-crossover fallback audit; they do not justify changing Generic gates, fitting new thresholds or declaring specialized Linux economics.
 
 **Next independent gate:** quantify achievable benefit under *actually deployable* fixed Serial, fixed CPU, and bounded static thresholds, and compare against the same-process Auto route; then test resource transitions and budget-aware action changes with an actual long-lived Runtime before proposing any specialized policy.
+
+## Same-Runtime Epoch lifecycle follow-up — 2026-10-14
+
+[Run #38591184133](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38591184133) on SHA `59807ecdeb8dc3e9e06f540f45012dd506764c9b`: **2/2 Linux x86 jobs PASS** (Ubuntu 22.04/24.04, 2 repeats per runner). Source: [v05_epoch_lifecycle.rs](../../crates/runtime-api/examples/v05_epoch_lifecycle.rs).
+
+The new example keeps the same Runtime alive through epoch 0 → 1 → 2, invokes actual public initial calibration and explicit revalidation, asserts epoch/stale/fresh behavior and compares fixed Serial, fixed CPU and Auto in rotating-order matched samples with full vector result parity.
+
+Observed representative Ubuntu 24.04 first repeat:
+- Epoch 0 initial calibration: `Published`, 0.998 ms, boundary 1024. At 1024 items, Serial 160.2 µs, CPU 107.5 µs, Auto 164.4 µs (misroutes to Serial).
+- Epoch 1: explicit invalidation and revalidation `Published`, 0.499 ms, boundary 512. At 1024 items Auto switches to CPU: 107.1 µs versus 102.1 µs fixed CPU. This removes most of the prior avoidable latency, but revalidation itself must be amortized.
+- Epoch 2: revalidation `Published`, 0.476 ms, boundary remains 512, despite no controlled physical resource change. **This illustrates potentially unnecessary adaptation cost** when a notification is not tied to actual effective-resource change.
+- All compared result vectors match and published boundaries are fresh after successful revalidation.
+
+Interpretation: the epoch → stale → revalidate → publish → next-call-route plumbing works with real SDK APIs. **Crucial limitation:** epoch 1 and 2 are explicitly injected invalidation signals; there is *no actual 4→2→1 affinity/quota transition during this same-process run*. Therefore this proves lifecycle plumbing only, not successful Linux resource-aware adaptation or full economic superiority. Rust example formatting and clippy for this newly added example were not part of this specific CI gate; a green benchmark should not be misrepresented as a full release integration gate.
+
+**Decision: ITERATE, no core tuning.** The central remaining study is a *combined same-process controlled CPU resource transition* plus useful signals/candidate gating. Differentiate true resource changes from unnecessary invalidations and evaluate revalidation break-even against relevant remaining calls; compare with static Serial/CPU and a deployable fixed boundary instead of just the per-call oracle.
