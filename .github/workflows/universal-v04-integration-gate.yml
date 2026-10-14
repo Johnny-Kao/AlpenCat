@@ -1,0 +1,57 @@
+name: Universal v0.4 Integration Gate
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/convergence-adaptive-compute-sdk
+    paths:
+      - "crates/runtime-api/**"
+      - ".github/workflows/universal-v04-integration-gate.yml"
+permissions:
+  contents: read
+concurrency:
+  group: universal-v04-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  integration:
+    name: runtime-${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: linux-x64, runner: ubuntu-24.04 }
+          - { id: linux-arm64, runner: ubuntu-24.04-arm }
+          - { id: macos-apple-silicon, runner: macos-15 }
+          - { id: macos-intel, runner: macos-15-intel }
+          - { id: windows-x64, runner: windows-2025 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy -p runtime-api --all-targets -- -D warnings
+      - name: Runtime API suite
+        run: cargo test -p runtime-api -- --nocapture
+      - name: Real elapsed SDK example
+        run: cargo run -p runtime-api --example elapsed_sdk
+      - name: Universal quickstart
+        run: cargo run -p runtime-api --example universal_quickstart
+  gate:
+    name: universal-v04-gate
+    needs: [integration]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every platform
+        env:
+          RESULT: ${{ needs.integration.result }}
+        run: |
+          echo "integration=$RESULT"
+          test "$RESULT" = "success"
+          echo "UNIVERSAL_V04_INTEGRATION_GATE=PASS"
