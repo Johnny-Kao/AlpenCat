@@ -69,3 +69,15 @@ Same-run *per full size sweep* gross Auto savings relative to the best fixed str
 4. If W3 sign reversals persist after controls, isolate environmental effects and route crossover behavior; stop any proposed blanket performance claim.
 
 No algorithm parameter changes are justified by this first screening.
+
+## Resource–Action–Opportunity experiment (following architectural audit)
+
+The archived [Convergence Research Plan](../CONVERGENCE_RESEARCH_PLAN_2026-10-06.md), [Generic STOP decision](../UNIVERSAL_GENERIC_HOLDOUT_DECISION_2026-10-08.md) and [Linux x86 specialization checkpoint](../LINUX_X86_SPECIALIZATION_CHECKPOINT_2026-10-08.md) override any interpretation that the objective is simply to maximize Generic Auto scores.
+
+The next experiment is [resource_action_matrix.py](../../experiments/v05/resource_action_matrix.py), executed by [v05-resource-action-matrix.yml](../../.github/workflows/v05-resource-action-matrix.yml). It records an actual *effective schedulable CPU set* alongside cgroup CPU quota, cgroup memory limits, PSI and a runner manifest, then constrains child workloads to up to 4, 2 and 1 permitted CPUs and returns to the original envelope.
+
+The *controllable action space of the existing SDK* is Serial vs CPU parallel within its runtime execution budget. External affinity manipulation is the experiment's intervention and **not** an SDK action. The analyzer reports fixed-best / per-size oracle / observed Auto: \(fixed-best − oracle\) is the maximum *measured actionable* opportunity across the observed sizes, subject to measurement noise. A zero or negative Auto result must be distinguished from a zero oracle opportunity.
+
+**Limits:** existing Rust examples execute fixed modes before Auto and measure bootstrap cost indirectly; repeated subprocesses are not a single long-lived SDK lifecycle. Child CPU-time and peak RSS cover mixed fixed + Auto measurements, so there is no valid per-action memory-efficiency attribution. The run is a falsification/screening gate, not a full control-policy economic claim. GPU and memory batch-size actions remain future research; do not infer they are presently controllable from their hardware snapshots.
+
+**Decision after matrix:** If oracle opportunity is absent, STOP optimizing that workload; if opportunity exists but Auto misses it, examine platform-signal/action eligibility before any tuning; if signal economics fail, STOP the candidate policy. Do not reopen the frozen Generic optimizer campaign.
