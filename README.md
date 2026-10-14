@@ -82,6 +82,7 @@ The research branch can contain documentation or work beyond the tagged alpha; p
 | Topic | Link |
 | --- | --- |
 | Main documentation navigation | [Docs index](docs/INDEX.md) |
+| Folder layout and CI workflow inventory | [Project structure](docs/PROJECT_STRUCTURE.md) |
 | Component boundaries and event lifecycle | [Architecture](docs/ARCHITECTURE.md) |
 | Version history and source dependency | [Release notes](docs/RELEASE_NOTES.md) |
 | Tested revisions, job inventory and limitations | [Test evidence](docs/TEST_EVIDENCE.md) |
