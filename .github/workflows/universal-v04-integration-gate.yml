@@ -6,6 +6,8 @@ on:
       - research/convergence-adaptive-compute-sdk
     paths:
       - "crates/runtime-api/**"
+      - "tests/external-consumer/**"
+      - "docs/UNIVERSAL_V0_4_SIGNOFF.md"
       - ".github/workflows/universal-v04-integration-gate.yml"
 permissions:
   contents: read
@@ -42,6 +44,10 @@ jobs:
         run: cargo run -p runtime-api --example elapsed_sdk
       - name: Universal quickstart
         run: cargo run -p runtime-api --example universal_quickstart
+      - name: External consumer builds and runs outside workspace
+        run: cargo run --manifest-path tests/external-consumer/Cargo.toml
+      - name: Concurrent stress test
+        run: cargo test -p runtime-api --test v04_stress -- --nocapture
   gate:
     name: universal-v04-gate
     needs: [integration]
