@@ -1,6 +1,6 @@
 # v0.5 — Adaptation Economics (screening)
 
-**Status:** EXPERIMENT RUNNING / decision pending. Not a v0.5 release.
+**Status:** INITIAL SCREENING COMPLETED — ITERATE. Not a v0.5 release.\n\n**Execution:** [Actions run #38583433407](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38583433407), SHA `7b5a794cd4eeb7f07e70b7fc9960e933b4d1a4e2`; all 4 Linux x86 matrix jobs PASS. Raw samples, manifests, and CPU/RSS are attached to the run.
 
 ## Hypothesis
 For repeated workload mixes, the cumulative savings of explicitly calibrated Auto over the *best fixed mode for the whole mix* exceed calibration/revalidation costs before the resource regime changes again.
@@ -24,7 +24,7 @@ For repeated workload mixes, the cumulative savings of explicitly calibrated Aut
 7. No automatic background adaptation is implied. Negative/zero savings and fallback remain valid findings.
 
 ## Decision
-**PENDING evidence.** A green GitHub Actions run means code and parity checks completed; it is **not** an economic GO. Assess gross savings, amortization period, noise, CPU/RSS and adverse regimes before GO / ITERATE / STOP.
+**ITERATE (research methodology, not runtime tuning).** Four green jobs confirm executable screening/parity; they do not prove a stable net performance benefit. W1 shows small positive gross savings across all samples but baseline 100-cycle net was negative in all four; W2 has one baseline regression and positive pressure savings; W3 has baseline and contention sign reversals. No universal economic GO. See observed data below.
 
 ## Next actions
 If positive economics survive screening, run a single long-lived-runtime paired lifecycle measurement with truly interleaved Serial/CPU/Auto, actual measured calibration/revalidation, affinity reduction/recovery, complete per-mode CPU/RSS and sufficient repetitions for CI. Otherwise STOP or ITERATE according to observed failure mode.
@@ -40,3 +40,32 @@ flowchart LR
   E -->|Yes| F["Validate in one long-lived Runtime"]
   E -->|No| G["ITERATE or STOP; preserve negative evidence"]
 ```
+
+## First integrated run: observed results
+
+Same-run *per full size sweep* gross Auto savings relative to the best fixed strategy, milliseconds; negative values are regressions. Columns are phases; each cell reports W1 / W2 / W3. These are descriptive medians, **not** estimates with confidence intervals.
+
+| Runner/sample | Baseline (ms) | CPU contention (ms) | Recovery (ms) |
+| --- | --- | --- | --- |
+| Ubuntu 22.04 / 1 | +0.123 / +0.137 / −1.709 | +0.066 / +0.176 / +32.507 | +0.075 / +0.081 / +5.997 |
+| Ubuntu 22.04 / 2 | +0.166 / +0.308 / +10.423 | +0.319 / +1.387 / +1.974 | +0.191 / +0.411 / −2.257 |
+| Ubuntu 24.04 / 1 | +0.279 / −0.338 / −0.822 | +0.447 / +0.897 / −14.932 | +0.163 / +0.358 / +3.277 |
+| Ubuntu 24.04 / 2 | +0.158 / +0.547 / −11.432 | +0.989 / +1.133 / +19.233 | +0.032 / +0.209 / +2.215 |
+
+### Economics and resources
+
+- Baseline W1 net over a *hypothetical* 100 size-sweep cycles was negative in 4/4, chiefly because of startup/bootstrap cost (approximately 27–38 ms in samples), against <0.28 ms gross savings per cycle.
+- Baseline W2 gross savings reversed sign on Ubuntu 24.04 sample 1; this refutes stable superiority at current measurement precision.
+- W3 sign reversed across samples for baseline (3/4 negative), CPU contention (1/4 negative), and recovery (1/4 negative). The contention swing is large enough to demand randomized paired remeasurement before interpreting it as resource-aware gain.
+- All four samples reported output equivalence and successful explicit revalidation status under CPU pressure and recovery; all workload processes completed.
+- Observed entire benchmark-process CPU time for W1 was roughly 0.33–0.48 seconds, W2 0.24–0.32 seconds, W3 10.85–20.71 seconds. Peak child RSS across samples was roughly 4.6–6.3 MiB (W1), 91–108 MiB (W2), and 92–108 MiB (W3). This **cannot** establish an Auto-specific resource advantage because fixed-route runs and probing are included.
+- No robust p99, noise-floor estimate, or confidence interval is claimed from five samples per point. The four jobs can execute on different virtualized CPU hosts.
+
+### Follow-up gate
+
+1. Keep the three Rust workloads, but replace the current staged route measurement with *actual within-process, randomized/interleaved* Serial, CPU, Auto calls for matched size sequences and checksums. Compare startup + explicit calibration and changes/recovery in the same Runtime instance.
+2. Record per-mode CPU time and RSS (or process-delta with limitations), thermal/noise context, and enough paired repetitions to estimate intervals and regression frequency.
+3. Distinguish dispatch/scheduling costs from calibration/revalidation and distinguish global fixed-best from per-size oracle best. Test low call counts and frequent resource flips.
+4. If W3 sign reversals persist after controls, isolate environmental effects and route crossover behavior; stop any proposed blanket performance claim.
+
+No algorithm parameter changes are justified by this first screening.
