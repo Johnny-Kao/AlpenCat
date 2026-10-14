@@ -12,6 +12,12 @@ use std::sync::OnceLock;
 
 mod revalidation;
 
+#[cfg(target_os = "linux")]
+mod linux_affinity;
+
+#[cfg(target_os = "linux")]
+pub use linux_affinity::LinuxAffinityObserver;
+
 use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
