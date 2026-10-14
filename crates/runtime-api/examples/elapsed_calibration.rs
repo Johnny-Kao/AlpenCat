@@ -6,8 +6,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use runtime_api::{
-    BackendKind, BoundedRevalidationConfig, RevalidationStatus, Runtime,
-    RuntimeRevalidationOutcome,
+    BackendKind, BoundedRevalidationConfig, RevalidationStatus, Runtime, RuntimeRevalidationOutcome,
 };
 
 /// Measure a representative workload on each backend using monotonic elapsed time.
