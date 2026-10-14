@@ -15,7 +15,9 @@ fn allowed_cpus() -> std::io::Result<String> {
         .lines()
         .find_map(|line| line.strip_prefix("Cpus_allowed_list:"))
         .map(|value| value.trim().to_owned())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing Cpus_allowed_list"))
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "missing Cpus_allowed_list")
+        })
 }
 
 /// Owns an observer worker. Dropping it stops and joins the worker.
@@ -28,7 +30,7 @@ impl LinuxAffinityObserver {
     /// Start a cold-path watcher. Returns an error if the procfs source is unavailable.
     pub fn start(runtime: Arc<Runtime>, interval: Duration) -> std::io::Result<Self> {
         if interval.is_zero() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "interval must be positive"));
+            return Err(std::io::Error::new(\n                std::io::ErrorKind::InvalidInput,\n                "interval must be positive",\n            ));
         }
         let initial = allowed_cpus()?;
         let stop = Arc::new(AtomicBool::new(false));
@@ -50,7 +52,7 @@ impl LinuxAffinityObserver {
                     }
                 }
             })?;
-        Ok(Self { stop, worker: Some(worker) })
+        Ok(Self {\n            stop,\n            worker: Some(worker),\n        })
     }
 
     pub fn stop(&mut self) {
