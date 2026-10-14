@@ -1,6 +1,6 @@
 # Contributing to AlpenCat
 
-AlpenCat is currently an experimental v0.1 runtime under active validation.
+AlpenCat currently provides an experimental **v0.4.0-alpha** release, with an unpublished Rust workspace (Cargo package version 0.1.0). See [release notes](../docs/RELEASE_NOTES.md), [roadmap](../docs/ROADMAP.md), and [test evidence](../docs/TEST_EVIDENCE.md).
 
 Contributions are welcome when they improve correctness, portability,
 measurement quality, integration quality, documentation, or evidence-backed
@@ -19,7 +19,7 @@ runtime behavior.
 
 ## Design boundary
 
-AlpenCat v0.1 is architecture-complete for the current experimental scope.
+AlpenCat v0.4 alpha is feature-complete for its *documented experimental scope*.
 
 Please open a design discussion before proposing:
 
@@ -52,6 +52,9 @@ remain additive where practical: unsupported or uncertain cases should retain a
 safe reference or generic path.
 
 ## Validation expectations
+
+For release-related changes, the two required workflow gates and same-commit sign-off rules are recorded in [v0.4 Sign-off](../docs/UNIVERSAL_V0_4_SIGNOFF.md). An external consumer is available under `tests/external-consumer/`.
+
 
 For Rust changes, the normal validation surface includes:
 
