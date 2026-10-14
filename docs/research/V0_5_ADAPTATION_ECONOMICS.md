@@ -105,3 +105,18 @@ At affinity 1, CPU fallback to Serial and zero measured per-size oracle opportun
 **Limits:** CPU vs Auto comparisons are same-process and interleaved, but paired best-of-Serial/CPU each block is an optimistic per-block hindsight oracle, *not* the best deployable static policy. A positive result against that oracle should not be assumed; negative results are meaningful as screening only. Existing Synthetic kernels are not identical to legacy W1/W2/W3, so do not combine or pretend direct historical comparability. No affinity transition or revalidation lifecycle here. The controlled Resource–Action Matrix remains separate; these two experiments answer different portions of the required evidence.
 
 **Gate:** Treat CI green as correct benchmark execution only. Economics can advance only if measured opportunity exceeds the observed fluctuation and complete lifecycle overhead; otherwise STOP/ITERATE without modifying the selector.
+
+## Same-runtime paired measurement result
+
+**Run:** [#38588802211](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38588802211), SHA `825c797e5a72664c92d6194d820e87b37f94e97b`. **2/2 jobs PASS** on Ubuntu 22.04/24.04. Rust format, release build, output parity and interleaved samples all succeeded. This validates benchmark execution, **not** performance GO.
+
+Representative Ubuntu 24.04 evidence (21 three-route paired blocks, twice independently executed within one runner):
+
+- Compute-like kernel kind 0 at size 1,024: serial median ~255–256 µs, CPU median ~100–102 µs, yet Auto ~257 µs (Serial backend), and all 21 paired observations showed negative Auto-vs-instant-oracle delta in each sample. The initial calibration produced `NoLocalCrossover` and left the initial 1,024 boundary unchanged. This is **missed recoverable opportunity**, not just random CI drift, in this artificial workload; it is not evidence that wider Generic tuning would be beneficial.
+- Memory-light synthetic kernel kind 1 at size 16,384: Serial ~30 µs, CPU ~46–47 µs, Auto ~46–48 µs (Cpu backend), and 20–21/21 paired observations were regressions relative to hindsight best fixed route. This reveals a **wrong fixed-boundary route on an observed region**, again under `NoLocalCrossover`.
+- At larger compute kind 0 size 65,536, Auto and CPU select the same backend and measured differences are relatively small and variable. No blanket speedup.
+- Calibration took roughly 0.2–0.8 ms across these samples and often produced no publication; the complete runtime lifecycle and repeated resource transitions are not measured in this gate.
+
+These are deliberately simple synthetic kernels; the benchmark fixes a starting boundary, the rotating order reduces systematic bias but is not a fully randomized design, and the per-block best route is an optimistic hindsight oracle rather than a deployable policy. The results support **ITERATE** on measurement/eligibility design with an explicit no-crossover fallback audit; they do not justify changing Generic gates, fitting new thresholds or declaring specialized Linux economics.
+
+**Next independent gate:** quantify achievable benefit under *actually deployable* fixed Serial, fixed CPU, and bounded static thresholds, and compare against the same-process Auto route; then test resource transitions and budget-aware action changes with an actual long-lived Runtime before proposing any specialized policy.
