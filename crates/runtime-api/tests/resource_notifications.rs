@@ -52,11 +52,9 @@ fn linux_observer_start_stop_and_repeated_shutdown() {
 
     let runtime = Arc::new(Runtime::new());
     let baseline = runtime.resource_epoch();
-    let mut observer = LinuxAffinityObserver::start(
-        Arc::clone(&runtime),
-        Duration::from_millis(10),
-    )
-    .expect("linux procfs affinity available");
+    let mut observer =
+        LinuxAffinityObserver::start(Arc::clone(&runtime), Duration::from_millis(10))
+            .expect("linux procfs affinity available");
     std::thread::sleep(Duration::from_millis(30));
     observer.stop();
     observer.stop();
