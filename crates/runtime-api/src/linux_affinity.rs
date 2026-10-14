@@ -30,7 +30,10 @@ impl LinuxAffinityObserver {
     /// Start a cold-path watcher. Returns an error if the procfs source is unavailable.
     pub fn start(runtime: Arc<Runtime>, interval: Duration) -> std::io::Result<Self> {
         if interval.is_zero() {
-            return Err(std::io::Error::new(\n                std::io::ErrorKind::InvalidInput,\n                "interval must be positive",\n            ));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "interval must be positive",
+            ));
         }
         let initial = allowed_cpus()?;
         let stop = Arc::new(AtomicBool::new(false));
@@ -52,7 +55,10 @@ impl LinuxAffinityObserver {
                     }
                 }
             })?;
-        Ok(Self {\n            stop,\n            worker: Some(worker),\n        })
+        Ok(Self {
+            stop,
+            worker: Some(worker),
+        })
     }
 
     pub fn stop(&mut self) {
