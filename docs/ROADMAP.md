@@ -16,6 +16,12 @@ flowchart LR
 - **v0.1 Preview:** boundary and epoch primitives, portable fast route, explicit invalidation, bounded local revalidation with supplied measurements.
 - **v0.4 Alpha (2026-10-14):** initial measured calibration, revalidation helpers, portable notifier and diagnostics, Linux affinity observer, independent consumer, concurrent stress and five-platform integration gate. [Release](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha).
 
+## v0.5 research: active (not released)
+
+- Adaptation economics screening: [research protocol](research/V0_5_ADAPTATION_ECONOMICS.md), [Linux x86 matrix run #38583433407](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38583433407). This is a deliberately limited fixed-route versus Auto screening, not a v0.5 performance sign-off.
+- Gate before a positive performance claim: same-process lifecycle measurement, interleaved randomized paired baselines, actual calibration and recovery costs, per-mode CPU/RSS, statistically defensible repeats and measured regressions.
+- Retain negative findings. Do not optimize routing based solely on this preliminary benchmark or promote alpha to beta.
+
 ## Next milestones (not shipped)
 
 | Priority | Milestone | Exit condition |
