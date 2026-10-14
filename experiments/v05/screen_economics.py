@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 from experiments.convergence.run_universal_cross_machine import (
     WORKLOADS, build_examples, executable, hardware_manifest,
     start_pressure, stop_pressure, total_memory_bytes,
