@@ -1,5 +1,5 @@
 use runtime_api::{
-    revalidate_elapsed_map, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode, Runtime,
+    calibrate_elapsed_map, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode, Runtime,
     RuntimeConfig, TaskDefinition, WorkRange,
 };
 
@@ -23,8 +23,7 @@ fn main() {
         .expect("serial route");
     let reference = runtime.wait(before).value;
 
-    runtime.invalidate_resources();
-    let outcome = revalidate_elapsed_map(
+    let outcome = calibrate_elapsed_map(
         &runtime,
         BoundedRevalidationConfig::new(4, 128, 4096),
         &task,
