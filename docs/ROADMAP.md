@@ -18,7 +18,7 @@ flowchart LR
 
 ## v0.5 research: active (not released)
 
-- Adaptation economics screening: [research protocol](research/V0_5_ADAPTATION_ECONOMICS.md), [Linux x86 matrix run #38583433407](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38583433407). This is a deliberately limited fixed-route versus Auto screening, not a v0.5 performance sign-off.
+- Adaptation economics screening: [research protocol](research/V0_5_ADAPTATION_ECONOMICS.md), [Linux x86 matrix run #38583433407](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38583433407). Four matrix jobs PASS; initial decision **ITERATE** due inconsistent W3 economics and measurement-design limits. This is not a v0.5 performance sign-off.
 - Gate before a positive performance claim: same-process lifecycle measurement, interleaved randomized paired baselines, actual calibration and recovery costs, per-mode CPU/RSS, statistically defensible repeats and measured regressions.
 - Retain negative findings. Do not optimize routing based solely on this preliminary benchmark or promote alpha to beta.
 
