@@ -1,0 +1,41 @@
+name: v0.5 Same Runtime Paired Gate
+on:
+  push:
+    branches: [research/v0.5-adaptation-economics]
+    paths:
+      - 'crates/runtime-api/examples/v05_paired.rs'
+      - '.github/workflows/v05-same-runtime-paired.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paired:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+          components: rustfmt
+      - name: Format validation
+        run: cargo fmt --all -- --check
+      - name: Build paired workload
+        run: cargo build -p runtime-api --release --example v05_paired
+      - name: Execute paired repetitions
+        run: |
+          mkdir -p evidence-v05
+          for sample in 1 2; do
+            ALPENCAT_V05_ROUNDS=21 target/release/examples/v05_paired | tee "evidence-v05/${{ matrix.os }}-${sample}.txt"
+          done
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: same-runtime-${{ matrix.os }}-${{ github.run_id }}
+          path: evidence-v05
+          if-no-files-found: warn
+          retention-days: 14
