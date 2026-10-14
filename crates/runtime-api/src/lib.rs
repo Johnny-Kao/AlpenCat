@@ -22,7 +22,9 @@ use runtime_cpu_rayon::{CpuAdapter, CpuExecutionKind};
 use runtime_gpu_wgpu::GpuAdapter;
 use runtime_selector::select;
 
-pub use elapsed_calibration::{published as elapsed_calibration_published, revalidate_elapsed_map};
+pub use elapsed_calibration::{
+    calibrate_elapsed_map, published as elapsed_calibration_published, revalidate_elapsed_map,
+};
 pub use revalidation::{
     bounded_revalidate_serial_cpu, BoundedRevalidationConfig, LocalBoundaryEvidence,
     RevalidationStatus, RouteMeasurement, RuntimeRevalidationOutcome,
