@@ -18,7 +18,10 @@ fn initial_calibration_publishes_only_on_local_crossover() {
         },
     );
     assert_eq!(outcome.status, RevalidationStatus::Published);
-    assert_eq!(outcome.published_boundary, Some(runtime.boundary_snapshot()));
+    assert_eq!(
+        outcome.published_boundary,
+        Some(runtime.boundary_snapshot())
+    );
     assert!(!runtime.boundary_is_stale());
 }
 
@@ -57,6 +60,9 @@ fn concurrent_invalidation_disallows_calibration_publication() {
             })
         },
     );
-    assert_eq!(outcome.status, RevalidationStatus::InvalidatedDuringMeasurement);
+    assert_eq!(
+        outcome.status,
+        RevalidationStatus::InvalidatedDuringMeasurement
+    );
     assert!(outcome.published_boundary.is_none());
 }
