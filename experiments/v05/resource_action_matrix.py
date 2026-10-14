@@ -107,11 +107,11 @@ def main():
     # The eligible action space is currently Serial/CPU; affinity is a controlled
     # resource-envelope intervention, not a claim that the SDK can set CPU affinity.
     for workload, example, boundary in WORKLOADS:
-        for regime, subset in unique + list(reversed(unique[:-1])):
+        for phase, (regime, subset) in enumerate(unique + list(reversed(unique[:-1]))):
             row = run_one(executable(ROOT, example), subset, boundary, regime, args.repeats)
             row["workload"] = workload
             row["example"] = example
-            row["pass_kind"] = "recovery" if len(results) >= len(unique)*len(WORKLOADS) else "transition"
+            row["pass_kind"] = "recovery" if phase >= len(unique) else "transition"
             results.append(row)
             print(json.dumps(row), flush=True)
             time.sleep(.15)
