@@ -97,3 +97,11 @@ At affinity 1, CPU fallback to Serial and zero measured per-size oracle opportun
 - Important limitation: each envelope is a newly launched workload process, not a single Runtime whose ResourceEpoch genuinely spans 4 → 2 → 1 → 2 → 4. CPU-time/RSS are whole-process measurements, not per-action reductions. The existing benchmark's calibration bootstrap cost is estimated, not a real closed-loop adaptation measurement.
 
 **Research decision: ITERATE methodology only; no Runtime tuning.** Require actual same-process paired/interleaved action measurement and an independently estimated noise floor, before proceeding from opportunity screening to Linux signal eligibility/policy. W3 performance claims are **blocked**. Generic STOP remains unchanged.
+
+## Bias-control follow-up: same-runtime paired gate
+
+[Run #38588802211](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38588802211) at SHA `825c797e5a72664c92d6194d820e87b37f94e97b` checks formatting, builds and measures [v05_paired.rs](../../crates/runtime-api/examples/v05_paired.rs). A single Runtime per kernel type executes a *rotating-order* Serial/CPU/Auto block at each of four sizes, 21 measured blocks and 3 warmups. It measures real initial `calibrate_elapsed_map`, asserts full result-vector equivalence and records chosen CPU/Auto backend, paired signed difference and regression frequency.
+
+**Limits:** CPU vs Auto comparisons are same-process and interleaved, but paired best-of-Serial/CPU each block is an optimistic per-block hindsight oracle, *not* the best deployable static policy. A positive result against that oracle should not be assumed; negative results are meaningful as screening only. Existing Synthetic kernels are not identical to legacy W1/W2/W3, so do not combine or pretend direct historical comparability. No affinity transition or revalidation lifecycle here. The controlled Resource–Action Matrix remains separate; these two experiments answer different portions of the required evidence.
+
+**Gate:** Treat CI green as correct benchmark execution only. Economics can advance only if measured opportunity exceeds the observed fluctuation and complete lifecycle overhead; otherwise STOP/ITERATE without modifying the selector.
