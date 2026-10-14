@@ -10,10 +10,9 @@
 
 use std::sync::OnceLock;
 
-mod revalidation;
-
 #[cfg(target_os = "linux")]
 mod linux_affinity;
+mod revalidation;
 
 #[cfg(target_os = "linux")]
 pub use linux_affinity::LinuxAffinityObserver;
