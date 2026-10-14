@@ -81,3 +81,19 @@ The *controllable action space of the existing SDK* is Serial vs CPU parallel wi
 **Limits:** existing Rust examples execute fixed modes before Auto and measure bootstrap cost indirectly; repeated subprocesses are not a single long-lived SDK lifecycle. Child CPU-time and peak RSS cover mixed fixed + Auto measurements, so there is no valid per-action memory-efficiency attribution. The run is a falsification/screening gate, not a full control-policy economic claim. GPU and memory batch-size actions remain future research; do not infer they are presently controllable from their hardware snapshots.
 
 **Decision after matrix:** If oracle opportunity is absent, STOP optimizing that workload; if opportunity exists but Auto misses it, examine platform-signal/action eligibility before any tuning; if signal economics fail, STOP the candidate policy. Do not reopen the frozen Generic optimizer campaign.
+
+## Resource–Action Matrix: first result (2026-10-14)
+
+**Run:** [#38585542540](https://github.com/Johnny-Kao/AlpenCat/actions/runs/38585542540) — source SHA `ea56ca633e636593516982eb9794c07e7e16167a`, four of four Linux jobs PASS, raw matrix and environment artifacts retained. Three existing workload families were exercised in controlled CPU affinity 4 → 2 → 1 → 2 → 4 envelopes per job (where available). This is subprocess affinity control, not an SDK capability to change affinity.
+
+**Decisive finding:** measured *per-size oracle opportunity* versus the best global fixed mode was frequently **tiny**, but measured Auto gains/losses were substantially larger. In particular W3 across Ubuntu 22.04 samples displayed oracle opportunities roughly 0.04–0.17 ms per sweep under affinity 2–4, while signed Auto differences reached about −41.8 to +88.5 ms. Ubuntu 24.04 likewise showed W3 signed differences from approximately −86.5 to +25.4 ms against about 0.17–0.18 ms of fixed-vs-oracle opportunity. These contradictory magnitudes are strong evidence of order/time drift or uncontrolled measurement disturbance; they **cannot** represent a repeatable routing benefit.
+
+At affinity 1, CPU fallback to Serial and zero measured per-size oracle opportunity were observed, consistent with the existing effective parallelism guardrail. Some observed Auto-vs-fixed differences remained nonzero even there: another direct demonstration of timing noise rather than meaningful action advantage.
+
+**Control-level interpretation:**
+- Effective schedulable CPU availability is measurable and can be manipulated in the experiment, and the runtime conservatively falls back to Serial at 1 CPU.
+- Distinguish capability constraints from workload route-economics. Detecting fewer effective CPUs is useful for exclusion; it does not itself establish the value of recalibration.
+- Existing evidence is insufficient to price platform-informed switches; no new Linux-specific policy should be merged.
+- Important limitation: each envelope is a newly launched workload process, not a single Runtime whose ResourceEpoch genuinely spans 4 → 2 → 1 → 2 → 4. CPU-time/RSS are whole-process measurements, not per-action reductions. The existing benchmark's calibration bootstrap cost is estimated, not a real closed-loop adaptation measurement.
+
+**Research decision: ITERATE methodology only; no Runtime tuning.** Require actual same-process paired/interleaved action measurement and an independently estimated noise floor, before proceeding from opportunity screening to Linux signal eligibility/policy. W3 performance claims are **blocked**. Generic STOP remains unchanged.
