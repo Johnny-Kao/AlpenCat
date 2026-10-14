@@ -1,133 +1,93 @@
-# AlpenCat Architecture
+# AlpenCat architecture
 
-> Updated: 2026-10-04  
-> Status: Converged minimal runtime; native integration validation open
+**Current architecture:** v0.4.0-alpha, released 2026-10-14. Experimental. [Version notes](RELEASE_NOTES.md) · [Test evidence](TEST_EVIDENCE.md).
 
-## Research question
+## Purpose
 
-> **How little runtime machinery is required to keep an execution boundary trustworthy when available compute changes?**
+AlpenCat keeps a previously measured Serial/CPU execution boundary usable across changes in available compute. It separates the **fast routing path** from the **cold measurement and invalidation path**. It is not an end-to-end task scheduler, resource broker, or continuously learning model.
 
-The answer has narrowed through measurement and falsification.
+## Runtime components
 
-AlpenCat no longer attempts to be a general adaptive scheduler.
-
-## Active architecture
-
-```text
-PlatformAdapter
-      |
-      | resource state changed
-      v
-ResourceEpoch
-      |
-      v
-PublishedBoundary -----> FastRoute -----> backend
-      |
-      | stale?
-      v
-near-boundary demand
-      |
-      v
-bounded local revalidation
-      |
-      +-- crossover found -> publish new boundary
-      |
-      +-- no local crossover -> keep unmeasured region stale
+```mermaid
+flowchart TB
+  subgraph App["Application / SDK consumer"]
+    Task["TaskDefinition + WorkRange"]
+    Notice["ResourceNotifier<br/>(cross-platform explicit)"]
+  end
+  subgraph Runtime["runtime-api"]
+    Select["Auto / explicit ExecutionMode"]
+    Calibrate["Elapsed map calibration<br/>bounded local measurement"]
+    Diag["RuntimeDiagnostics"]
+  end
+  subgraph Foundations["Fast path: runtime-core + runtime-selector"]
+    Epoch["ResourceEpoch"]
+    Boundary["PublishedBoundary"]
+    Fast["FastRoute"]
+  end
+  subgraph Backends["Execution"]
+    Serial["Serial reference"]
+    CPU["runtime-cpu-rayon"]
+    GPU["runtime-gpu-wgpu<br/>(optional/eligible only)"]
+  end
+  Linux["Linux CPU affinity observer<br/>cold-path polling"] --> Epoch
+  Notice --> Epoch
+  Epoch --> Boundary
+  Task --> Select
+  Select --> Fast
+  Boundary --> Fast
+  Fast --> Serial
+  Fast --> CPU
+  Fast --> GPU
+  Calibrate --> Boundary
+  Epoch --> Diag
+  Boundary --> Diag
 ```
 
-### Core primitives
+## Resource transition and boundary validation
 
-**ResourceEpoch**
+```mermaid
+flowchart TD
+  A["Resource transition observed"] --> B["ResourceEpoch increment"]
+  B --> C["Published boundary is stale"]
+  C --> D["Application may continue routing"]
+  D --> E{"Caller explicitly invokes<br/>bounded revalidation?"}
+  E -->|No| F["Retain prior boundary<br/>and stale status"]
+  E -->|Yes| G["Measure real Serial and CPU<br/>in bounded neighborhood"]
+  G --> H{"Both routes measured?<br/>Crossover observed?"}
+  H -->|No| F
+  H -->|Yes| I{"Epoch remained stable?"}
+  I -->|No| F
+  I -->|Yes| J["Publish new boundary"]
+```
 
-A monotonic invalidation signal. Thin native adapters advance it when a relevant platform transition occurs.
+**Important:** revalidation is currently **explicit**, not an automatic background trigger caused by every routed task. A stale boundary does not itself schedule a measurement. Initial calibration is also explicitly invoked. The Linux observer observes process affinity, **not** Intel HFI/AMD CPPC. Use the portable explicit notifier when no supported observer exists.
 
-**PublishedBoundary**
+**Evidence stays local.** No local crossover does not justify extrapolating a global serial-only route. Invalidated measurements cannot be used as current evidence.
 
-The currently trusted crossover state plus the resource epoch at which it was validated. Reads are lock-free; publication uses a small sequence protocol so readers cannot observe mixed boundary fields.
+## Crate responsibilities
 
-**FastRoute**
-
-A direct comparison against the published boundary. It does not run telemetry, prediction, or alternate-route probes.
-
-**Bounded local revalidation**
-
-A cold-path mechanism entered only when stale state and relevant demand justify paying measurement cost.
-
-Robustness testing added an important constraint: **local evidence stays local**. If a bounded search finds no crossover inside its measured window, AlpenCat keeps unmeasured regions stale rather than publishing a global serial fallback.
-
-## Active crates
-
-| Crate | Responsibility |
+| Crate | Purpose |
 | --- | --- |
-| `runtime-core` | Boundary, publication, ResourceEpoch, shared execution primitives |
-| `runtime-selector` | FastRoute |
-| `runtime-api` | Public runtime surface and explicit invalidation/publication |
-| `runtime-cpu-rayon` | CPU execution backend |
-| `runtime-gpu-wgpu` | Optional GPU execution backend |
-| `runtime-machine` | Lightweight capability discovery |
+| `runtime-core` | Monotonic epoch, published boundary and work primitives |
+| `runtime-selector` | FastRoute decision using the published boundary |
+| `runtime-api` | Public tasks, dispatch, calibration, notifier and diagnostics |
+| `runtime-cpu-rayon` | CPU parallel execution and resource-budget behavior |
+| `runtime-gpu-wgpu` | Optional GPU execution where available |
+| `runtime-machine` | Machine capability discovery |
 
-## Removed from the active design
+`tests/external-consumer` is deliberately outside the main workspace to validate dependency usage.
 
-The following were implemented and tested during earlier exploration, but are no longer architectural requirements:
+## Stable invariants and limitations
 
-- continuous runtime telemetry;
-- online cost models;
-- adaptive execution planners;
-- resource brokers;
-- policy caches driven by live resource fingerprints;
-- continuous rebalancing;
-- general work-unit scheduling;
-- migration/lease control layers;
-- CFFI-specific routing experiments.
+- FastRoute is not responsible for probing, calibration or event polling.
+- Caller-provided deterministic work is needed for comparable elapsed-map measurements.
+- Unavailable CPU paths are not treated as valid timing data.
+- No claim is made that any universal threshold generalizes across machines.
+- v0.x API compatibility is not guaranteed; the Cargo workspace version remains 0.1.0 despite the v0.4 Git alpha tag.
+- Hardware-native HFI/CPPC integration, production deployment and broad performance improvements are research items.
 
-They were removed rather than retained as compatibility baggage.
+## Historical architecture research
 
-Recovery point:
+Prior continuous telemetry, planners, brokers, policy caches and migration components were removed from the active design. The original work is recoverable from Git history and the `archive/pre-runtime-pruning-2026-10-04` branch. Dated documents under `docs/` and scripts under `experiments/` are kept as historical evidence rather than silently rewritten.
 
-```text
-archive/pre-runtime-pruning-2026-10-04
-```
-
-Git history and prior PRs preserve the full implementation record.
-
-## Why the scope shrank
-
-Experiments established:
-
-1. boundary invalidation is real;
-2. many transitions are harmless enough that eager work is wasteful;
-3. full recalibration can be much more expensive than stale-boundary regret;
-4. bounded local validation is sufficient for the severe cases tested;
-5. slowdown magnitude is useful evidence but not a universal state classifier;
-6. native platform semantics are a better trigger than continuous inference.
-
-The surviving architecture therefore pays almost nothing in the steady state and spends only after a meaningful invalidation.
-
-## Native adapter contract
-
-A native adapter should remain thin:
-
-```text
-native event
--> normalize minimal transition metadata if available
--> ResourceEpoch.invalidate()
-```
-
-It should not:
-
-- choose a backend;
-- run a predictor;
-- own a scheduler;
-- continuously poll performance counters when an event interface exists.
-
-Intel HFI is the first native validation target.
-
-See [Native Validation](./NATIVE_VALIDATION.md).
-
-## Remaining validation
-
-Cross-platform concurrency stress and the production-code x64 hot-path matrix now pass.
-
-The remaining architecture gate is to receive a real physical-server native event and connect it to the epoch invalidation path, then exercise the localized revalidation rule end-to-end.
-
-No broader scheduler redesign is planned unless native integration evidence forces one.
+For chronological research findings, use [Validation Status](VALIDATION_STATUS.md). For released v0.4 evidence, use [Test Evidence](TEST_EVIDENCE.md).
