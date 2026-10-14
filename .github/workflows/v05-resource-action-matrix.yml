@@ -1,0 +1,38 @@
+name: v0.5 Resource Action Opportunity Matrix
+on:
+  push:
+    branches: [research/v0.5-adaptation-economics]
+    paths:
+      - 'experiments/v05/resource_action_matrix.py'
+      - '.github/workflows/v05-resource-action-matrix.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v05-resource-action-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  resource-action:
+    name: ${{ matrix.os }} / ${{ matrix.sample }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Resource-action opportunity screening
+        run: python3 experiments/v05/resource_action_matrix.py --out "resource-action-results/${{ matrix.os }}-${{ matrix.sample }}" --repeats 5
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-action-${{ matrix.os }}-${{ matrix.sample }}-${{ github.run_id }}
+          path: resource-action-results/
+          retention-days: 14
+          if-no-files-found: warn
