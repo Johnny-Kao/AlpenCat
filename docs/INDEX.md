@@ -7,6 +7,7 @@ AlpenCat's current public baseline is [v0.4.0-alpha](https://github.com/Johnny-K
 | Need | Document |
 | --- | --- |
 | Understand the product and run the SDK | [README](../README.md) |
+| Browse folders, archived research and workflow inventory | [Project structure](PROJECT_STRUCTURE.md) |
 | System components and resource-transition flow | [Architecture](ARCHITECTURE.md) |
 | What was released, and what was excluded | [Versions and release notes](RELEASE_NOTES.md) |
 | Exact test runs and their limitations | [Test evidence](TEST_EVIDENCE.md) |
