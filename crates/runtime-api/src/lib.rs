@@ -347,6 +347,57 @@ impl Runtime {
         }
     }
 
+    /// Initial bounded calibration of the serial/CPU crossover.
+    ///
+    /// Unlike revalidation, this explicitly measures a fresh runtime. No
+    /// boundary is published without both routes and an observed crossover.
+    pub fn calibrate_serial_cpu<F>(
+        &self,
+        config: BoundedRevalidationConfig,
+        measure: F,
+    ) -> RuntimeRevalidationOutcome
+    where
+        F: FnMut(usize, BackendKind) -> Option<u64>,
+    {
+        let epoch = self.resource_epoch.current();
+        let previous = self.boundary_snapshot();
+        let evidence = bounded_revalidate_serial_cpu(previous.profile, config, measure);
+
+        if self.resource_epoch.current() != epoch {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::InvalidatedDuringMeasurement,
+                evidence,
+                published_boundary: None,
+            };
+        }
+        if let Some(backend) = evidence.unavailable_backend {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::RouteUnavailable(backend),
+                evidence,
+                published_boundary: None,
+            };
+        }
+        let Some(profile) = evidence.proposed_boundary else {
+            return RuntimeRevalidationOutcome {
+                status: RevalidationStatus::NoLocalCrossover,
+                evidence,
+                published_boundary: None,
+            };
+        };
+        let published = BoundarySnapshot::new(profile, epoch);
+        self.boundary.publish(published);
+        let status = if self.resource_epoch.current() == epoch {
+            RevalidationStatus::Published
+        } else {
+            RevalidationStatus::InvalidatedDuringMeasurement
+        };
+        RuntimeRevalidationOutcome {
+            status,
+            evidence,
+            published_boundary: Some(published),
+        }
+    }
+
     pub fn host_profile(&self) -> HostProfile {
         HostProfile::discover()
     }
