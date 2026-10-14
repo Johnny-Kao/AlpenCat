@@ -1,0 +1,10 @@
+[package]
+name = "alpencat-external-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+runtime-api = { path = "../../crates/runtime-api" }
