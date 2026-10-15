@@ -1,0 +1,38 @@
+name: v0.5 One-Batch Lazy Economics
+on:
+  push:
+    branches: [research/v05-server-integrated-batch]
+    paths:
+      - '.github/workflows/v05-lazy-economics-batch.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lazy:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        sample: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.87.0
+      - name: Input static QC
+        run: python3 -m py_compile experiments/v05/run_lazy_affinity_batch.py
+      - name: Build lifecycle experiment
+        run: cargo build --release -p runtime-api --example v05_lazy_affinity
+      - name: Full controlled CPU transition batch
+        run: |
+          python3 experiments/v05/run_lazy_affinity_batch.py --binary "${{ github.workspace }}/target/release/examples/v05_lazy_affinity" --out "results/${{ matrix.os }}-${{ matrix.sample }}.json"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lazy-economics-${{ matrix.os }}-${{ matrix.sample }}-${{ github.run_id }}
+          path: results/
+          retention-days: 14
+          if-no-files-found: warn
