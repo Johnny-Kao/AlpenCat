@@ -1,0 +1,31 @@
+name: v0.5 Server Topology Discovery
+on:
+  push:
+    branches: [research/v0.5-adaptation-economics]
+    paths:
+      - 'experiments/v05/server_topology_probe.py'
+      - '.github/workflows/v05-server-topology.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  topology:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static Python syntax check
+        run: python3 -m py_compile experiments/v05/server_topology_probe.py
+      - name: Collect resource topology and smoke test
+        run: python3 experiments/v05/server_topology_probe.py --out "server-results/${{ matrix.os }}" --repeats 11
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-topology-${{ matrix.os }}-${{ github.run_id }}
+          path: server-results/
+          retention-days: 14
+          if-no-files-found: warn
