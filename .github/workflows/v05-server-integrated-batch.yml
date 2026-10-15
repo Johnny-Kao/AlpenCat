@@ -1,0 +1,38 @@
+name: v0.5 Integrated Server CPU Gate
+on:
+  push:
+    branches: [research/v05-server-integrated-batch]
+    paths:
+      - '.github/workflows/v05-server-integrated-batch.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: integrated-server-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  server:
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        allocation: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static syntax validation
+        run: |
+          python3 -m py_compile experiments/v05/server_topology_probe.py experiments/v05/server_integrated_batch.py
+          cc -std=c11 -O3 -Wall -Wextra -Werror -pthread -fsyntax-only experiments/v05/server_locality_native.c
+      - name: Integrated cache/NUMA + native CPU economics evidence
+        run: |
+          python3 experiments/v05/server_integrated_batch.py --out "results/${{ matrix.os }}-${{ matrix.allocation }}" --reps 15
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-cpu-${{ matrix.os }}-${{ matrix.allocation }}-${{ github.run_id }}
+          path: results/
+          retention-days: 14
+          if-no-files-found: warn
