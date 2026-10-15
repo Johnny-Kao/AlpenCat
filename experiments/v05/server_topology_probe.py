@@ -80,41 +80,15 @@ def selected_pairs(info, allowed):
         cases.append(("cross-l3", distinct))
     return cases
 
-def bench(pair, workers, n, repeat):
-    # Pure Python benchmark measures memory access locality without CPU-bound
-    # multiprocessing start method confusion; child captures process CPU and wall.
-    program = """
-import os, time, json, statistics
-from concurrent.futures import ThreadPoolExecutor
-from array import array
-n=int(os.environ['N']); rounds=int(os.environ['ROUNDS'])
-# Deliberate shared-memory strided reads. GIL means this is a harness smoke,
-# NOT a multi-core C++/Rust speedup claim.
-a=array('Q',range(n))
-def task(start):
- s=0
- for i in range(start,n,64): s+=a[i]
- return s
-samples=[]
-for i in range(rounds+3):
- t=time.perf_counter_ns()
- with ThreadPoolExecutor(max_workers=2) as pool:
-  result=list(pool.map(task,(0,32)))
- dt=time.perf_counter_ns()-t
- if i>=3: samples.append(dt)
- print(json.dumps({'checksum':result[0]+result[1],'ns':dt,'round':i}))
-"""
-    env = os.environ.copy()
-    env.update(N=str(n), ROUNDS=str(repeat))
-    p = subprocess.run(["python3", "-c", program], capture_output=True, text=True,
-                       env=env, check=True, preexec_fn=lambda: os.sched_setaffinity(0, pair))
-    rows = [json.loads(line) for line in p.stdout.splitlines()]
-    checksum = set(x["checksum"] for x in rows)
-    assert len(checksum) == 1
-    data = [x["ns"] for x in rows if x["round"] >= 3]
-    return dict(pair=pair, workers=workers, size=n, n=len(data),
-                median_ns=int(statistics.median(data)), samples_ns=data,
-                checksum=next(iter(checksum)))
+def bench(pair, workers, n, repeat, binary):
+    p = subprocess.run([str(binary), str(n), str(repeat)], capture_output=True, text=True,
+                       check=True, preexec_fn=lambda: os.sched_setaffinity(0, pair))
+    result = json.loads(p.stdout.strip())
+    return dict(pair=pair, workers=workers, size=n, n=repeat,
+                median_wall_ns=int(statistics.median(result["wall_ns"])),
+                median_cpu_ns=int(statistics.median(result["cpu_ns"])),
+                samples_wall_ns=result["wall_ns"], samples_cpu_ns=result["cpu_ns"],
+                checksum=result["checksum"])
 
 def main():
     parser = argparse.ArgumentParser()
@@ -128,14 +102,18 @@ def main():
     cases = selected_pairs(info, allowed)
     manifest = dict(uname=platform.uname()._asdict(), allowed=allowed, topology=info,
                     cases=[dict(label=x,pair=y) for x,y in cases],
-                    interpretation="Two-worker Python/GIL test is *only* topology and execution harness smoke, not performance economics")
+                    interpretation="Native pthread memory-read benchmark (wall and CPU time); still a feasibility smoke, not proven cache/NUMA advantage")
     (out/"topology.json").write_text(json.dumps(manifest, indent=2)+"\n")
+    binary = out.resolve() / "server_locality_native"
+    subprocess.run(["cc", "-O3", "-std=c11", "-Wall", "-Wextra", "-pthread",
+                    str(Path(__file__).with_name("server_locality_native.c")),
+                    "-o", str(binary)], check=True)
     results = []
     for label, pair in cases:
-        val = bench(pair, 2, a.items, a.repeats)
+        val = bench(pair, 2, a.items, a.repeats, binary)
         val["label"] = label
         results.append(val)
-        print(json.dumps(dict(label=label, pair=pair, median_ns=val["median_ns"])), flush=True)
+        print(json.dumps(dict(label=label, pair=pair, median_wall_ns=val["median_wall_ns"], median_cpu_ns=val["median_cpu_ns"])), flush=True)
     (out/"results.json").write_text(json.dumps(results, indent=2)+"\n")
     print("TOPOLOGY_SMOKE_PASS", "CROSS_L3_AVAILABLE" if any(x["label"]=="cross-l3" for x in results) else "CROSS_L3_UNAVAILABLE")
 if __name__=="__main__":
