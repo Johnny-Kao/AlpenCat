@@ -23,6 +23,10 @@ flowchart LR
 
 **No automatic background recalibration is promised.** The application can call initial `calibrate_elapsed_map` and, after resource invalidation, `revalidate_elapsed_map`. Measurement evidence is local and workload-specific. Linux has an optional process-affinity observer; on other platforms applications can signal changes using `ResourceNotifier`. Native Intel HFI/AMD CPPC event delivery remains an open research target.
 
+## Resource-only Alpha candidate
+
+A lightweight, on-demand resource API has been integrated on the `release/v0.5-resource-alpha-prep` branch (not released yet). Applications can depend on `alpencat-resource` without the execution Runtime, or call `runtime_api::snapshot()`. Linux observations include process affinity and visible Cgroup v2 CPU/Memory limits, and include explicit unknown/unavailable values; the API neither benchmarks nor optimizes work. See [resource-only quickstart](docs/RESOURCE_ALPHA_QUICKSTART.md). The v0.4 release remains unchanged.
+
 ## Getting started
 
 The repository is a Rust workspace. From a checkout containing the v0.4 alpha source:
