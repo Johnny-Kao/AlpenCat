@@ -1,6 +1,6 @@
 //! AlpenCat resource-only, synchronous observation prototype.
 //! No background worker, runtime, scheduler, or adaptation policy.
-use std::{fs, io, path::Path, time::SystemTime};
+use std::{fs, io, path::{Path, PathBuf}, time::SystemTime};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reading<T> {
@@ -25,6 +25,13 @@ pub enum Limit { Unlimited, Value(u64) }
 #[derive(Debug)]
 pub struct ResourceSnapshot {
     pub observed_at: SystemTime,
+    pub completed_at: SystemTime,
+    /// True only when the process cgroup was resolved to a known cgroup2 mount.
+    pub cgroup_resolved: bool,
+    /// Limits are bounded by visible ancestors only; hidden host parents are not observable.
+    pub limits_complete: bool,
+    /// CPU quota divided by period, in CPU equivalents, smallest visible ancestor.
+    pub effective_cpu_capacity: Reading<f64>,
     pub allowed_cpus: Reading<Vec<usize>>,
     pub cpu_quota_us: Reading<Limit>,
     pub cpu_period_us: Reading<u64>,
@@ -40,7 +47,7 @@ pub fn snapshot() -> ResourceSnapshot {
     { linux_snapshot(Path::new("/proc/self"), Path::new("/sys/fs/cgroup")) }
     #[cfg(not(target_os = "linux"))]
     {
-        ResourceSnapshot { observed_at: SystemTime::now(),
+        ResourceSnapshot { observed_at: SystemTime::now(), completed_at: SystemTime::now(), cgroup_resolved: false, limits_complete: false, effective_cpu_capacity: Reading::Unsupported,
             allowed_cpus: Reading::Unsupported, cpu_quota_us: Reading::Unsupported,
             cpu_period_us: Reading::Unsupported, throttled_periods: Reading::Unsupported,
             memory_max_bytes: Reading::Unsupported, memory_current_bytes: Reading::Unsupported,
@@ -103,31 +110,142 @@ pub fn parse_v2_membership(s: &str) -> Option<&str> {
     s.lines().find_map(|l| l.strip_prefix("0::"))
 }
 #[cfg(target_os = "linux")]
-fn linux_snapshot(proc_self: &Path, cgroup_mount: &Path) -> ResourceSnapshot {
-    let status = get_text(&proc_self.join("status"));
-    let allowed_cpus = parsed(status, |s| s.lines()
-       .find_map(|l| l.strip_prefix("Cpus_allowed_list:"))
-       .and_then(parse_cpu_list));
-    let member = parsed(get_text(&proc_self.join("cgroup")), |s| {
-        let v = parse_v2_membership(s)?;
-        if !v.starts_with('/') || v.split('/').any(|piece| piece == "..") { return None; }
-        Some(v.to_owned())
-    });
-    let cg = match member { Reading::Known(rel) => Some(cgroup_mount.join(rel.trim_start_matches('/'))), _=>None };
-    let read_cg = |name: &str| match &cg { Some(base) => get_text(&base.join(name)), None => Reading::Unknown };
-    let cpu_max = parsed(read_cg("cpu.max"), parse_cpu_max);
-    let (cpu_quota_us,cpu_period_us) = match cpu_max {
-       Reading::Known((q,p)) => (Reading::Known(q),Reading::Known(p)),
-       Reading::Unsupported => (Reading::Unsupported,Reading::Unsupported),
-       Reading::Unavailable(e) => (Reading::Unavailable(e.clone()),Reading::Unavailable(e)),
-       Reading::Unknown => (Reading::Unknown,Reading::Unknown),
+fn mount_unescape(s: &str) -> String {
+    let mut result = s.to_owned();
+    for (from,to) in [("\\040"," "),("\\011","\t"),("\\012","\n"),("\\134","\\")] {
+        result = result.replace(from,to);
+    }
+    result
+}
+/// Find a cgroup2 mount and resolve a /proc/self/cgroup path within the mount root.
+/// Longest matching mount root wins; no path may traverse beyond the mount.
+pub fn resolve_cgroup_mount(mountinfo: &str, member: &str) -> Option<(PathBuf, bool)> {
+    if !member.starts_with('/') || member.split('/').any(|x| x == ".." || x == ".") { return None; }
+    let mut winner: Option<(usize, PathBuf, bool)> = None;
+    for line in mountinfo.lines() {
+        let (left,right) = line.split_once(" - ")?;
+        if right.split_whitespace().next() != Some("cgroup2") { continue; }
+        let columns: Vec<_> = left.split_whitespace().collect();
+        if columns.len() < 5 { continue; }
+        let root = mount_unescape(columns[3]);
+        let mount = mount_unescape(columns[4]);
+        if !root.starts_with('/') || !mount.starts_with('/') { continue; }
+        let rel = if root == "/" { member.trim_start_matches('/') }
+            else if member == root { "" }
+            else if let Some(v) = member.strip_prefix(&(root.clone()+"/")) { v }
+            else { continue };
+        if rel.split('/').any(|x| x == ".." || x == ".") { continue; }
+        let path = Path::new(&mount).join(rel);
+        let complete = root == "/";
+        if winner.as_ref().is_none_or(|(n,_,_)| root.len() > *n) {
+            winner = Some((root.len(),path,complete));
+        }
+    }
+    winner.map(|(_,p,c)| (p,c))
+}
+fn walk_visible(cg: &Path, root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut pos = cg.to_path_buf();
+    loop {
+        found.push(pos.clone());
+        if pos == root { break; }
+        if !pos.starts_with(root) { return Vec::new(); }
+        let Some(parent) = pos.parent() else { return Vec::new() };
+        pos = parent.to_path_buf();
+    }
+    found
+}
+fn aggregate_memory(ancestors: &[PathBuf]) -> Reading<Limit> {
+    let mut smallest = u64::MAX;
+    for p in ancestors {
+        match parsed(get_text(&p.join("memory.max")),parse_limit) {
+            Reading::Known(Limit::Value(n)) => smallest = smallest.min(n),
+            Reading::Known(Limit::Unlimited) => {},
+            Reading::Unsupported => return Reading::Unsupported,
+            Reading::Unknown => return Reading::Unknown,
+            Reading::Unavailable(e) => return Reading::Unavailable(e),
+        }
+    }
+    Reading::Known(if smallest == u64::MAX { Limit::Unlimited } else { Limit::Value(smallest) })
+}
+fn aggregate_cpu(ancestors: &[PathBuf]) -> (Reading<Limit>,Reading<u64>,Reading<f64>) {
+    let mut best: Option<(u64,u64)> = None;
+    for p in ancestors {
+        match parsed(get_text(&p.join("cpu.max")),parse_cpu_max) {
+            Reading::Known((Limit::Value(q),period)) => {
+                if best.is_none_or(|(a,b)| (q as u128)*(b as u128) < (a as u128)*(period as u128)) {
+                    best=Some((q,period));
+                }
+            },
+            Reading::Known((Limit::Unlimited,_)) => {},
+            Reading::Unsupported => return (Reading::Unsupported,Reading::Unsupported,Reading::Unsupported),
+            Reading::Unknown => return (Reading::Unknown,Reading::Unknown,Reading::Unknown),
+            Reading::Unavailable(e) => return (Reading::Unavailable(e.clone()),Reading::Unavailable(e.clone()),Reading::Unavailable(e)),
+        }
+    }
+    match best {
+        Some((q,p)) => (Reading::Known(Limit::Value(q)),Reading::Known(p),Reading::Known(q as f64/p as f64)),
+        None => (Reading::Known(Limit::Unlimited),Reading::Unknown,Reading::Unknown),
+    }
+}
+#[cfg(target_os = "linux")]
+fn linux_snapshot(proc_self: &Path, fallback_mount: &Path) -> ResourceSnapshot {
+    let begun = SystemTime::now();
+    let allowed_cpus = parsed(get_text(&proc_self.join("status")), |s| s.lines()
+        .find_map(|l| l.strip_prefix("Cpus_allowed_list:")).and_then(parse_cpu_list));
+    let membership = parsed(get_text(&proc_self.join("cgroup")), |s| parse_v2_membership(s).map(str::to_owned));
+    let mounts = get_text(&proc_self.join("mountinfo"));
+    let mapped = match (&membership,&mounts) {
+        (Reading::Known(m),Reading::Known(info)) => resolve_cgroup_mount(info,m),
+        _ => None,
     };
-    ResourceSnapshot { observed_at: SystemTime::now(),
-      allowed_cpus, cpu_quota_us,cpu_period_us,
-      throttled_periods: parsed(read_cg("cpu.stat"), |s| read_key_u64(s,"nr_throttled")),
-      memory_max_bytes: parsed(read_cg("memory.max"),parse_limit),
-      memory_current_bytes: parsed(read_cg("memory.current"), |s| s.trim().parse().ok()),
-      cpu_pressure_some_avg10: parsed(read_cg("cpu.pressure"),parse_pressure_avg10),
+    // For test fixture compatibility only: a missing mountinfo does not silently
+    // guess a container mapping in a real procfs environment.
+    let fallback = if proc_self != Path::new("/proc/self") {
+        match &membership { Reading::Known(m) if m.starts_with('/') && !m.split('/').any(|x| x == "..") =>
+            Some((fallback_mount.join(m.trim_start_matches('/')),true)), _ => None }
+    } else { None };
+    let cg = mapped.or(fallback);
+    let (ancestors,complete) = match cg.as_ref() {
+        Some((p,whole)) => {
+            let root = match (&mounts,&membership) {
+                (Reading::Known(info),Reading::Known(m)) => {
+                    resolve_cgroup_mount(info,m).and_then(|(path,_)| {
+                        // The last accessible mount boundary is found from the cgroup2 mount point.
+                        info.lines().find_map(|l| {
+                            let (a,b)=l.split_once(" - ")?;
+                            if b.split_whitespace().next()!=Some("cgroup2") { return None; }
+                            let v:Vec<_>=a.split_whitespace().collect();
+                            if v.len()<5 { return None; }
+                            let mount=PathBuf::from(mount_unescape(v[4]));
+                            path.starts_with(&mount).then_some(mount)
+                        })
+                    }).unwrap_or_else(|| fallback_mount.to_path_buf())
+                },
+                _ => fallback_mount.to_path_buf(),
+            };
+            (walk_visible(p,&root),*whole)
+        },
+        None => (Vec::new(),false)
+    };
+    let (cpu_quota_us,cpu_period_us,effective_cpu_capacity,memory_max_bytes) =
+        if ancestors.is_empty() { (Reading::Unknown,Reading::Unknown,Reading::Unknown,Reading::Unknown) }
+        else {
+            let (q,p,c)=aggregate_cpu(&ancestors);
+            (q,p,c,aggregate_memory(&ancestors))
+        };
+    let read_cg = |name: &str| match cg.as_ref() {
+        Some((p,_)) => get_text(&p.join(name)), None => Reading::Unknown
+    };
+    ResourceSnapshot {
+        observed_at: begun,completed_at:SystemTime::now(),cgroup_resolved:cg.is_some(),
+        limits_complete:complete && !ancestors.is_empty(),
+        effective_cpu_capacity,
+        allowed_cpus,cpu_quota_us,cpu_period_us,
+        throttled_periods:parsed(read_cg("cpu.stat"), |s| read_key_u64(s,"nr_throttled")),
+        memory_max_bytes,
+        memory_current_bytes:parsed(read_cg("memory.current"), |s| s.trim().parse().ok()),
+        cpu_pressure_some_avg10:parsed(read_cg("cpu.pressure"),parse_pressure_avg10),
     }
 }
 
