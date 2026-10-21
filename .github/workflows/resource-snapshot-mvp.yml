@@ -42,7 +42,8 @@ jobs:
         run: cargo run --release --example consumer
       - name: Resource overhead
         run: |
-          /usr/bin/time -v cargo run --release --example measure 2>&1 | tee snapshot-metrics.log
+          cargo build --release --example measure
+          /usr/bin/time -v ./target/release/examples/measure 2>&1 | tee snapshot-metrics.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
