@@ -1,0 +1,42 @@
+name: v0.5 Resource Alpha Release Gate
+
+on:
+  push:
+    branches:
+      - release/v0.5-resource-alpha-prep
+    paths:
+      - .github/workflows/resource-alpha-release-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resource-alpha:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain and formatting
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          cargo fmt --all -- --check
+      - name: Workspace and compatibility checks
+        shell: bash
+        run: |
+          cargo check --workspace --all-targets
+          cargo clippy -p alpencat-resource --all-targets -- -D warnings
+          cargo test -p alpencat-resource
+          cargo test -p runtime-api
+      - name: Resource-only example
+        shell: bash
+        run: cargo run -p alpencat-resource --example quickstart
+      - name: External runtime and resource consumer
+        shell: bash
+        run: cargo run --manifest-path tests/external-consumer/Cargo.toml
