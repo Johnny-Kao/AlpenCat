@@ -1,5 +1,7 @@
 //! AlpenCat synchronous resource snapshot API (experimental alpha).
 //! No background worker, runtime, scheduler, or adaptation policy.
+// Parsing helpers are used by Linux observation, and remain available for fixture tests.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 use std::{fs, io, path::{Path, PathBuf}, time::SystemTime};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
