@@ -1,0 +1,51 @@
+name: Resource Snapshot MVP Research
+on:
+  push:
+    branches:
+      - research/resource-snapshot-mvp
+    paths:
+      - .github/workflows/resource-snapshot-mvp.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resource-snapshot:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: experiments/resource-snapshot-mvp
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner environment
+        run: |
+          uname -a
+          rustc --version
+          cargo --version
+          printf 'cgroup-files: '
+          test -f /sys/fs/cgroup/cgroup.controllers && echo v2 || echo unknown
+      - name: Formatting and compile
+        run: |
+          cargo fmt --all -- --check
+          cargo check --all-targets
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Unit and Linux fixture tests
+        run: cargo test --all-targets -- --nocapture
+      - name: Independent consumer
+        run: cargo run --release --example consumer
+      - name: Resource overhead
+        run: |
+          /usr/bin/time -v cargo run --release --example measure 2>&1 | tee snapshot-metrics.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snapshot-metrics-${{ matrix.os }}
+          path: experiments/resource-snapshot-mvp/snapshot-metrics.log
+          if-no-files-found: ignore
+          retention-days: 7
