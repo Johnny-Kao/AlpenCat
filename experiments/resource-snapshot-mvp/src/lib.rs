@@ -148,6 +148,38 @@ mod tests {
     #[test] fn pressure() {
         assert_eq!(parse_pressure_avg10("some avg10=0.24 avg60=0.03 avg300=0.01 total=55\nfull avg10=0.00"),Some(0.24));
     }
+    #[test] fn reading_propagates_absence_and_parse_errors() {
+        assert_eq!(parsed::<u64>(Reading::Unsupported, |s| s.parse().ok()), Reading::Unsupported);
+        assert_eq!(parsed::<u64>(Reading::Known("bad".to_owned()), |s| s.parse().ok()), Reading::Unknown);
+        assert_eq!(parsed::<u64>(Reading::Unavailable("permission".to_owned()), |s| s.parse().ok()), Reading::Unavailable("permission".to_owned()));
+    }
+    #[cfg(target_os = "linux")]
+    #[test] fn isolated_linux_fixture() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!("alpencat-snapshot-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let proc = root.join("proc");
+        let cgroup = root.join("cgroup");
+        let group = cgroup.join("team").join("job");
+        std::fs::create_dir_all(&proc).unwrap();
+        std::fs::create_dir_all(&group).unwrap();
+        std::fs::write(proc.join("status"), "Cpus_allowed_list:\t1-3\n").unwrap();
+        std::fs::write(proc.join("cgroup"), "0::/team/job\n").unwrap();
+        std::fs::write(group.join("cpu.max"), "200000 100000\n").unwrap();
+        std::fs::write(group.join("cpu.stat"), "nr_periods 10\nnr_throttled 3\n").unwrap();
+        std::fs::write(group.join("memory.max"), "1048576\n").unwrap();
+        std::fs::write(group.join("memory.current"), "2048\n").unwrap();
+        std::fs::write(group.join("cpu.pressure"), "some avg10=0.32 avg60=0.10 avg300=0.01 total=98\n").unwrap();
+        let got = linux_snapshot(&proc, &cgroup);
+        assert_eq!(got.allowed_cpus, Reading::Known(vec![1,2,3]));
+        assert_eq!(got.cpu_quota_us, Reading::Known(Limit::Value(200000)));
+        assert_eq!(got.cpu_period_us, Reading::Known(100000));
+        assert_eq!(got.throttled_periods, Reading::Known(3));
+        assert_eq!(got.memory_max_bytes, Reading::Known(Limit::Value(1048576)));
+        assert_eq!(got.memory_current_bytes, Reading::Known(2048));
+        assert_eq!(got.cpu_pressure_some_avg10, Reading::Known(0.32));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn membership() {
         assert_eq!(parse_v2_membership("0::/foo/bar\n"),Some("/foo/bar"));
     }
