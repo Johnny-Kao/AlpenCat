@@ -37,7 +37,7 @@ pub struct ResourceSnapshot {
 /// Scope: Linux process permitted CPU list and its unified cgroup v2.
 pub fn snapshot() -> ResourceSnapshot {
     #[cfg(target_os = "linux")]
-    { return linux_snapshot(Path::new("/proc/self"), Path::new("/sys/fs/cgroup")); }
+    { linux_snapshot(Path::new("/proc/self"), Path::new("/sys/fs/cgroup")) }
     #[cfg(not(target_os = "linux"))]
     {
         ResourceSnapshot { observed_at: SystemTime::now(),
