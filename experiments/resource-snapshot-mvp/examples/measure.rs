@@ -7,7 +7,7 @@ fn measured<F: FnMut()>(n: usize, mut f: F) -> (u128, u128) {
 }
 fn main() {
     let n = 2000;
-    let (_, snapshot_ns) = measured(n, || black_box(alpencat_resource_snapshot::snapshot()));
+    let (_, snapshot_ns) = measured(n, || { black_box(alpencat_resource_snapshot::snapshot()); });
     let (_, direct_ns) = measured(n, || {
         black_box(fs::read_to_string("/proc/self/status").ok());
         black_box(fs::read_to_string("/proc/self/cgroup").ok());
