@@ -1,15 +1,15 @@
 # Resource Snapshot — Alpha quickstart (candidate)
 
-**Status: release candidate; not a released version.** The current released source is v0.4.0-alpha. This API is being validated on `release/v0.5-resource-alpha-prep`.
+**Status: experimental source alpha v0.5.0-alpha.** No production certification or crates.io publication.
 
 ## Install from candidate source
 
 ```toml
 [dependencies]
-alpencat-resource = { git = "https://github.com/Johnny-Kao/AlpenCat", branch = "release/v0.5-resource-alpha-prep" }
+alpencat-resource = { git = "https://github.com/Johnny-Kao/AlpenCat", tag = "v0.5.0-alpha" }
 ```
 
-For reproducibility, pin the dependency to a reviewed commit SHA before deploying. After a source tag is created, use the final release tag instead of this branch.
+The source tag identifies an immutable commit. For particularly sensitive deployments, pin that commit SHA in addition to reviewing the documented limitations.
 
 ## Use
 
