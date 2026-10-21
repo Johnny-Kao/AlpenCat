@@ -1,3 +1,5 @@
+use alpencat_resource::{snapshot, Reading};
+
 use runtime_api::{
     calibrate_elapsed_map, BoundaryProfile, BoundedRevalidationConfig, ExecutionMode,
     ResourceNotifier, Runtime, RuntimeConfig, TaskDefinition, WorkRange,
@@ -9,6 +11,10 @@ fn work(i: usize) -> u64 {
 }
 
 fn main() {
+    let resources = snapshot();
+    assert!(resources.completed_at.duration_since(resources.observed_at).is_ok());
+    assert!(!matches!(resources.allowed_cpus, Reading::Known(ref v) if v.is_empty()));
+
     let runtime = Arc::new(Runtime::with_config(RuntimeConfig {
         boundary: BoundaryProfile::new(256, usize::MAX),
         ..RuntimeConfig::default()
