@@ -5,9 +5,19 @@
 | Tag | State | Scope |
 | --- | --- | --- |
 | [v0.1.0-preview](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.1.0-preview) | Preserved historical preview | Portable runtime, explicit invalidation, caller-provided bounded revalidation |
+| [v0.5.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.5.0-alpha) | **Experimental source alpha (resource-only)** | On-demand resource snapshots; original execution runtime preserved, no crates.io publication |
 | [v0.4.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha) | **Released — experimental alpha** | Real elapsed calibration, notifications, Linux affinity observation, diagnostics, SDK and cross-platform integration evidence |
 
 Cargo workspace package version remains `0.1.0`. The Git tag is the **source snapshot identity** for the alpha release; these are not published `0.4.0` crates. The v0.4 alpha source snapshot is immutable by convention. Later documentation commits on the research branch are **not** part of the tagged release.
+
+## v0.5.0-alpha — 2026-10-22
+
+- Source-only GitHub pre-release, tagged from `release/v0.5-resource-alpha-prep`; `main` and v0.4 release remain unchanged.
+- New workspace crate `alpencat-resource`: synchronous, read-only `snapshot()` with Linux process affinity, visible cgroup v2 quotas, memory bounds, throttling and PSI, plus typed absent/unsupported readings.
+- `runtime-api::snapshot()` reexports resource observation without requiring consumers to instantiate execution `Runtime`.
+- Separate alpha consumer and [quickstart](RESOURCE_ALPHA_QUICKSTART.md).
+- Release candidate validation: [four-platform Release Gate #39668504149](https://github.com/Johnny-Kao/AlpenCat/actions/runs/39668504149), Ubuntu 22.04/24.04, macOS 15, Windows 2025; cargo check, Clippy, resource tests, original runtime tests and external consumer; all four jobs passed.
+- **Limitations:** Linux-specific signals return Unsupported on other platforms; cgroup ancestor visibility depends on namespace/mounts; collected fields are not atomic; there is no hardware control, automatic optimization, performance-savings promise or production support. Release CI runs rustfmt in the ephemeral checkout, but does not enforce that committed files are preformatted.
 
 ## v0.4.0-alpha — 2026-10-14
 
