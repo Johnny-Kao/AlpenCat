@@ -4,7 +4,7 @@
 
 **An experimental, lightweight Rust execution runtime that maintains a calibrated routing boundary as available compute changes.**
 
-**Latest tagged source:** [v0.4.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha) · **Status:** experimental alpha, not production certified · **Toolchain:** Rust 1.87+ · **License:** MIT OR Apache-2.0.
+**Latest source alpha:** [v0.5.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.5.0-alpha) (resource-only SDK) · **Preserved execution release:** [v0.4.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha) · **Status:** experimental alpha, not production certified · **Toolchain:** Rust 1.87+ · **License:** MIT OR Apache-2.0.
 
 AlpenCat is **not** a general scheduler, telemetry engine, or online performance predictor. It separates low-overhead routing from bounded, explicitly requested measurement and resource-state notifications.
 
@@ -25,7 +25,7 @@ flowchart LR
 
 ## Resource-only Alpha candidate
 
-A lightweight, on-demand resource API has been integrated on the `release/v0.5-resource-alpha-prep` branch (not released yet). Applications can depend on `alpencat-resource` without the execution Runtime, or call `runtime_api::snapshot()`. Linux observations include process affinity and visible Cgroup v2 CPU/Memory limits, and include explicit unknown/unavailable values; the API neither benchmarks nor optimizes work. See [resource-only quickstart](docs/RESOURCE_ALPHA_QUICKSTART.md). The v0.4 release remains unchanged.
+A lightweight, on-demand resource API is available in the v0.5.0-alpha source release. Applications can depend on `alpencat-resource` without the execution Runtime, or call `runtime_api::snapshot()`. Linux observations include process affinity and visible Cgroup v2 CPU/Memory limits, and include explicit unknown/unavailable values; the API neither benchmarks nor optimizes work. See [resource-only quickstart](docs/RESOURCE_ALPHA_QUICKSTART.md). The v0.4 release remains unchanged.
 
 ## Getting started
 
