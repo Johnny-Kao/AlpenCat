@@ -18,7 +18,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain and formatting
