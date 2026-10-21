@@ -111,7 +111,6 @@ fn parse_pressure_avg10(s: &str) -> Option<f64> {
 pub fn parse_v2_membership(s: &str) -> Option<&str> {
     s.lines().find_map(|l| l.strip_prefix("0::"))
 }
-#[cfg(target_os = "linux")]
 fn mount_unescape(s: &str) -> String {
     let mut result = s.to_owned();
     for (from,to) in [("\\040"," "),("\\011","\t"),("\\012","\n"),("\\134","\\")] {
