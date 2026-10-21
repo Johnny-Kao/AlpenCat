@@ -40,6 +40,8 @@ jobs:
         run: cargo test --all-targets -- --nocapture
       - name: Independent consumer
         run: cargo run --release --example consumer
+      - name: External consumer (separate Cargo project)
+        run: cargo run --release --manifest-path ../resource-snapshot-consumer/Cargo.toml
       - name: Resource overhead
         run: |
           cargo build --release --example measure
