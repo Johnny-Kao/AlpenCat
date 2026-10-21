@@ -1,0 +1,10 @@
+[package]
+name = "alpencat-resource-consumer"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+alpencat-resource-snapshot = { path = "../resource-snapshot-mvp" }
+
+[workspace]
