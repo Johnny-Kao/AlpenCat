@@ -30,6 +30,8 @@ pub struct ResourceSnapshot {
     pub cgroup_resolved: bool,
     /// Limits are bounded by visible ancestors only; hidden host parents are not observable.
     pub limits_complete: bool,
+    /// Best-effort detection of a change to cgroup membership during collection.
+    pub membership_changed_during_read: bool,
     /// CPU quota divided by period, in CPU equivalents, smallest visible ancestor.
     pub effective_cpu_capacity: Reading<f64>,
     pub allowed_cpus: Reading<Vec<usize>>,
@@ -47,7 +49,7 @@ pub fn snapshot() -> ResourceSnapshot {
     { linux_snapshot(Path::new("/proc/self"), Path::new("/sys/fs/cgroup")) }
     #[cfg(not(target_os = "linux"))]
     {
-        ResourceSnapshot { observed_at: SystemTime::now(), completed_at: SystemTime::now(), cgroup_resolved: false, limits_complete: false, effective_cpu_capacity: Reading::Unsupported,
+        ResourceSnapshot { observed_at: SystemTime::now(), completed_at: SystemTime::now(), cgroup_resolved: false, limits_complete: false, membership_changed_during_read: false, effective_cpu_capacity: Reading::Unsupported,
             allowed_cpus: Reading::Unsupported, cpu_quota_us: Reading::Unsupported,
             cpu_period_us: Reading::Unsupported, throttled_periods: Reading::Unsupported,
             memory_max_bytes: Reading::Unsupported, memory_current_bytes: Reading::Unsupported,
@@ -193,7 +195,8 @@ fn linux_snapshot(proc_self: &Path, fallback_mount: &Path) -> ResourceSnapshot {
     let begun = SystemTime::now();
     let allowed_cpus = parsed(get_text(&proc_self.join("status")), |s| s.lines()
         .find_map(|l| l.strip_prefix("Cpus_allowed_list:")).and_then(parse_cpu_list));
-    let membership = parsed(get_text(&proc_self.join("cgroup")), |s| parse_v2_membership(s).map(str::to_owned));
+    let membership_first = get_text(&proc_self.join("cgroup"));
+    let membership = parsed(membership_first.clone(), |s| parse_v2_membership(s).map(str::to_owned));
     let mounts = get_text(&proc_self.join("mountinfo"));
     let mapped = match (&membership,&mounts) {
         (Reading::Known(m),Reading::Known(info)) => resolve_cgroup_mount(info,m),
@@ -237,8 +240,10 @@ fn linux_snapshot(proc_self: &Path, fallback_mount: &Path) -> ResourceSnapshot {
     let read_cg = |name: &str| match cg.as_ref() {
         Some((p,_)) => get_text(&p.join(name)), None => Reading::Unknown
     };
+    let membership_changed_during_read = membership_first != get_text(&proc_self.join("cgroup"));
     ResourceSnapshot {
         observed_at: begun,completed_at:SystemTime::now(),cgroup_resolved:cg.is_some(),
+        membership_changed_during_read,
         limits_complete:complete && !ancestors.is_empty(),
         effective_cpu_capacity,
         allowed_cpus,cpu_quota_us,cpu_period_us,
