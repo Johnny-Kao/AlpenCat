@@ -283,6 +283,10 @@ mod tests {
         std::fs::create_dir_all(&group).unwrap();
         std::fs::write(proc.join("status"), "Cpus_allowed_list:\t1-3\n").unwrap();
         std::fs::write(proc.join("cgroup"), "0::/team/job\n").unwrap();
+        std::fs::write(cgroup.join("cpu.max"), "max 100000\n").unwrap();
+        std::fs::write(cgroup.join("memory.max"), "max\n").unwrap();
+        std::fs::write(cgroup.join("team/cpu.max"), "400000 100000\n").unwrap();
+        std::fs::write(cgroup.join("team/memory.max"), "2097152\n").unwrap();
         std::fs::write(group.join("cpu.max"), "200000 100000\n").unwrap();
         std::fs::write(group.join("cpu.stat"), "nr_periods 10\nnr_throttled 3\n").unwrap();
         std::fs::write(group.join("memory.max"), "1048576\n").unwrap();
@@ -297,6 +301,14 @@ mod tests {
         assert_eq!(got.memory_current_bytes, Reading::Known(2048));
         assert_eq!(got.cpu_pressure_some_avg10, Reading::Known(0.32));
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(target_os="linux")]
+    #[test] fn mapping_and_hierarchical_limits() {
+        let mi = "32 1 0:20 /tenant /sys/fs/cgroup rw - cgroup2 cgroup rw\n";
+        assert_eq!(resolve_cgroup_mount(mi, "/tenant/app").map(|x| x.0), Some(PathBuf::from("/sys/fs/cgroup/app")));
+        assert_eq!(resolve_cgroup_mount(mi, "/different"), None);
+        assert_eq!(resolve_cgroup_mount(mi, "/tenant/../escape"), None);
+        assert_eq!(aggregate_cpu(&[]).2, Reading::Unknown); 
     }
     #[test] fn membership() {
         assert_eq!(parse_v2_membership("0::/foo/bar\n"),Some("/foo/bar"));
