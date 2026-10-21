@@ -1,11 +1,12 @@
 # Documentation index
 
-AlpenCat's current public baseline is [v0.4.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha). The research branch contains later **documentation updates**, not a new runtime release.
+AlpenCat's resource-only source alpha is [v0.5.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.5.0-alpha). The previous execution runtime remains preserved at [v0.4.0-alpha](https://github.com/Johnny-Kao/AlpenCat/releases/tag/v0.4.0-alpha).
 
 ## Start here
 
 | Need | Document |
 | --- | --- |
+| Get a standalone resource-only snapshot | [Resource alpha quickstart](RESOURCE_ALPHA_QUICKSTART.md) |
 | Understand the product and run the SDK | [README](../README.md) |
 | Browse folders, archived research and workflow inventory | [Project structure](PROJECT_STRUCTURE.md) |
 | System components and resource-transition flow | [Architecture](ARCHITECTURE.md) |
