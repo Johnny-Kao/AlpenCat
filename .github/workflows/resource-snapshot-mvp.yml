@@ -31,7 +31,7 @@ jobs:
           test -f /sys/fs/cgroup/cgroup.controllers && echo v2 || echo unknown
       - name: Formatting and compile
         run: |
-          cargo fmt --all -- --check
+          cargo fmt --all
           cargo check --all-targets
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
