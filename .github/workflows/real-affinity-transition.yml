@@ -1,0 +1,55 @@
+name: Real CPU Affinity Transition Economics
+
+on:
+  push:
+    branches: [research/resource-affinity-transition]
+    paths:
+      - .github/workflows/real-affinity-transition.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-cpu-affinity-transition
+  cancel-in-progress: true
+
+jobs:
+  live-affinity:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Environment and actual CPU allowance
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+          nproc
+          cat /proc/self/status | grep Cpus_allowed_list
+      - name: Format, compile, Clippy
+        run: |
+          cargo fmt --manifest-path experiments/resource-affinity-transition/Cargo.toml
+          cargo check --all-targets --manifest-path experiments/resource-affinity-transition/Cargo.toml
+          cargo clippy --all-targets --manifest-path experiments/resource-affinity-transition/Cargo.toml -- -D warnings
+          cargo build --release --manifest-path experiments/resource-affinity-transition/Cargo.toml
+      - name: Real 1-to-2-to-1 CPU affinity transitions and paired CPU/Wall
+        run: |
+          python3 experiments/resource-affinity-transition/run_transition.py \
+            --binary experiments/resource-affinity-transition/target/release/alpencat-affinity-transition \
+            --output real-affinity-economics.json | tee real-affinity-summary.log
+      - name: Save unbiased results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-affinity-${{ matrix.os }}
+          path: |
+            real-affinity-economics.json
+            real-affinity-economics.csv
+            real-affinity-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
