@@ -1,0 +1,58 @@
+name: Resource Lifecycle Real Workload Economics
+
+on:
+  push:
+    branches: [research/resource-workload-economics]
+    paths:
+      - .github/workflows/resource-workload-economics.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resource-workload-economics
+  cancel-in-progress: true
+
+jobs:
+  real-workload:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain and environment
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+          uname -a
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Format, build and static checks
+        shell: bash
+        run: |
+          cargo fmt --manifest-path experiments/resource-workload-economics/Cargo.toml
+          cargo check --manifest-path experiments/resource-workload-economics/Cargo.toml --all-targets
+          cargo clippy --manifest-path experiments/resource-workload-economics/Cargo.toml --all-targets -- -D warnings
+          cargo build --release --manifest-path experiments/resource-workload-economics/Cargo.toml
+      - name: Run paired CPU and wall-time study
+        shell: bash
+        run: |
+          python3 experiments/resource-workload-economics/run_paired.py \
+            --binary experiments/resource-workload-economics/target/release/alpencat-workload-economics \
+            --output workload-economics.json | tee workload-economics-summary.log
+      - name: Preserve unbiased result and individual rounds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workload-economics-${{ matrix.os }}
+          path: |
+            workload-economics.json
+            workload-economics.csv
+            workload-economics-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
