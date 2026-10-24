@@ -27,8 +27,8 @@ fn cpu_grain(s: &ResourceSnapshot) -> usize {
         Reading::Known(ids) if !ids.is_empty() => ids.len(),
         _ => 1,
     };
-    let effective = match s.effective_cpu_capacity {
-        Reading::Known(n) if n.is_finite() && n >= 1.0 =>
+    let effective = match &s.effective_cpu_capacity {
+        Reading::Known(n) if n.is_finite() && *n >= 1.0 =>
             (n.floor() as usize).max(1),
         _ => allowed,
     };
