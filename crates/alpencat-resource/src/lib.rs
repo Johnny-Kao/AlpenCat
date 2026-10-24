@@ -320,3 +320,7 @@ mod tests {
         assert_eq!(parse_v2_membership("0::/foo/bar\n"),Some("/foo/bar"));
     }
 }
+
+/// Explicit cached resource observation. No background worker or auto-policy.
+pub mod state;
+pub use state::{CachedSnapshot, Freshness, RefreshError, ResourceState};
