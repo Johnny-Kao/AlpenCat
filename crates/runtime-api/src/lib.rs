@@ -11,7 +11,7 @@
 use std::sync::OnceLock;
 
 /// Read-only resource observation. Independent of Runtime, calibration and routing.
-pub use alpencat_resource::{snapshot, ResourceSnapshot, Reading, Limit};
+pub use alpencat_resource::{snapshot, ResourceSnapshot, Reading, Limit, ResourceState, CachedSnapshot, Freshness, RefreshError};
 
 mod elapsed_calibration;
 #[cfg(target_os = "linux")]
