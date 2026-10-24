@@ -9,6 +9,7 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Freshness {
     Empty,
+    /// Not invalidated within the caller-owned event model; not an OS freshness guarantee.
     Fresh,
     /// Caller invalidated the observation; retain it only as historical evidence.
     Stale,
@@ -134,6 +135,8 @@ impl ResourceState {
         let started = Instant::now();
         let next = observer();
         if next.membership_changed_during_read {
+            // The last accepted resource context may also be obsolete.
+            self.invalidate();
             return Err(RefreshError::Inconsistent);
         }
 
@@ -219,6 +222,7 @@ mod tests {
             v
         }).unwrap_err(), RefreshError::Inconsistent);
         assert_eq!(state.cached().generation, prior);
+        assert_eq!(state.cached().freshness, Freshness::Stale);
     }
 
     #[test]
