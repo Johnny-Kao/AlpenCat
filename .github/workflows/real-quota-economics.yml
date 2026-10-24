@@ -38,6 +38,7 @@ jobs:
           cargo fmt --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo check --manifest-path experiments/cpu-quota-throttling/Cargo.toml --all-targets
           cargo clippy --manifest-path experiments/cpu-quota-throttling/Cargo.toml --all-targets -- -D warnings
+          cargo test -p alpencat-resource
           cargo test --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo build --release --manifest-path experiments/cpu-quota-throttling/Cargo.toml
       - name: Real service quota changes and paired CPU / p95 workload
