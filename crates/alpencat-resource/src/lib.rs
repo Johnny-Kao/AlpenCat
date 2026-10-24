@@ -327,10 +327,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("alpencat-root-{}-{}",std::process::id(),NEXT_ROOT_TEST.fetch_add(1,Ordering::Relaxed)));
         let leaf = dir.join("system.slice").join("test.service");
         std::fs::create_dir_all(&leaf).unwrap();
-        std::fs::write(leaf.join("cpu.max"),"50000 100000\\n").unwrap();
-        std::fs::write(leaf.join("memory.max"),"1048576\\n").unwrap();
-        std::fs::write(dir.join("system.slice/cpu.max"),"max 100000\\n").unwrap();
-        std::fs::write(dir.join("system.slice/memory.max"),"max\\n").unwrap();
+        std::fs::write(leaf.join("cpu.max"),"50000 100000\n").unwrap();
+        std::fs::write(leaf.join("memory.max"),"1048576\n").unwrap();
+        std::fs::write(dir.join("system.slice/cpu.max"),"max 100000\n").unwrap();
+        std::fs::write(dir.join("system.slice/memory.max"),"max\n").unwrap();
         // The actual cgroup v2 hierarchy root normally has no cpu.max / memory.max.
         let hierarchy = walk_visible(&leaf,&dir);
         assert_eq!(aggregate_cpu(&hierarchy,true).2,Reading::Known(0.5));
