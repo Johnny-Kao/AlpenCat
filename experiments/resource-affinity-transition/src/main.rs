@@ -95,12 +95,18 @@ fn main() {
         let workers = match mode {
             "fixed_one" => 1,
             "fixed_two" => 2,
-            "direct_event" => visible_workers(&snapshot()),
+            "direct_event" => {
+                let observed = snapshot();
+                assert_eq!(visible_workers(&observed), allowed_now, "direct API failed to read new affinity");
+                visible_workers(&observed)
+            },
             "alpencat" => {
                 resource_state.invalidate(); // external controller reports resource transition
                 let refreshed = resource_state.refresh()
                     .expect("inconsistent resource observation");
-                visible_workers(refreshed.fresh().expect("invalidated snapshot cannot be fresh"))
+                let observed = refreshed.fresh().expect("invalidated snapshot cannot be fresh");
+                assert_eq!(visible_workers(observed), allowed_now, "cached resource data differs from real affinity");
+                visible_workers(observed)
             },
             _ => unreachable!(),
         };
@@ -109,11 +115,6 @@ fn main() {
             assert!(resource_state.cached().fresh().is_some());
         }
         let observation_ns = observe_start.elapsed().as_nanos();
-        if mode == "direct_event" || mode == "alpencat" {
-            let s = snapshot(); // validation outside observation timing
-            assert_eq!(visible_workers(&s), allowed_now,
-                "observed worker cap differs from actual affinity; unsuitable environment");
-        }
         let checksum = parallel_compute(workers, BLOCKS, iterations, allowed_now);
         let cpu_ns = process_cpu_ns() - cpu_start;
         let wall_ns = wall_start.elapsed().as_nanos();
