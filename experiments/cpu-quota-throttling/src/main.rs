@@ -114,8 +114,8 @@ fn main() {
     assert_eq!(a.len(), 4, "usage: binary mode size unix-socket");
     let mode = Mode::parse(&a[1]);
     let (requests, iterations) = match a[2].as_str() {
-        "short" => (160, 90_000),
-        "long" => (320, 350_000),
+        "short" => (160, 900_000),
+        "long" => (320, 1_800_000),
         _ => panic!("invalid workload"),
     };
     let mut stream = {
