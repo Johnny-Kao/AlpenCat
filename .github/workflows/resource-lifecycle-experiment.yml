@@ -1,0 +1,58 @@
+name: Resource Lifecycle Stable-Gain Experiment
+
+on:
+  push:
+    branches: [research/resource-lifecycle-beta]
+    paths:
+      - .github/workflows/resource-lifecycle-experiment.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resource-lifecycle-beta
+  cancel-in-progress: true
+
+jobs:
+  correctness-and-overhead:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust environment
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          cargo fmt --all
+      - name: Lifecycle compile and compatibility
+        shell: bash
+        run: |
+          cargo check -p alpencat-resource --all-targets
+          cargo check -p runtime-api
+          cargo clippy -p alpencat-resource --all-targets -- -D warnings
+      - name: Unit and concurrency gates
+        shell: bash
+        run: cargo test -p alpencat-resource -- --nocapture
+      - name: Independent app integration
+        shell: bash
+        run: cargo run --manifest-path experiments/resource-lifecycle-consumer/Cargo.toml --release
+      - name: Paired Linux observation-cost experiment
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo build --release -p alpencat-resource --example lifecycle_bench
+          /usr/bin/time -v ./target/release/examples/lifecycle_bench 2>&1 | tee resource-lifecycle-metrics.log
+      - name: Save measurements
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-lifecycle-${{ matrix.os }}
+          path: resource-lifecycle-metrics.log
+          if-no-files-found: ignore
+          retention-days: 14
