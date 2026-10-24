@@ -6,7 +6,7 @@ use alpencat_resource::{snapshot, Reading, ResourceSnapshot, ResourceState};
 use std::{
     hint::black_box,
     io::{self, BufRead, Write},
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
