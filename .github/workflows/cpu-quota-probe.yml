@@ -1,0 +1,42 @@
+name: CPU Quota Control Probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe private systemd CPU quota service
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          id
+          sudo -n true
+          systemctl --version | head -2
+          cat /proc/self/cgroup
+          UNIT="alpencat-quota-probe-${GITHUB_RUN_ID}"
+          cleanup() { sudo systemctl stop "${UNIT}.service" || true; }
+          trap cleanup EXIT
+          sudo systemd-run --unit "${UNIT}" --property=CPUQuota=200% /usr/bin/sleep 40
+          CG=$(sudo systemctl show "${UNIT}.service" -P ControlGroup)
+          test -n "$CG"
+          echo "OWNED_CGROUP=$CG"
+          echo -n 'before='
+          sudo cat "/sys/fs/cgroup${CG}/cpu.max"
+          sudo systemctl set-property --runtime "${UNIT}.service" CPUQuota=50%
+          echo -n 'after='
+          sudo cat "/sys/fs/cgroup${CG}/cpu.max"
+          sudo systemctl set-property --runtime "${UNIT}.service" CPUQuota=200%
+          echo -n 'restored='
+          sudo cat "/sys/fs/cgroup${CG}/cpu.max"
