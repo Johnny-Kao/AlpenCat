@@ -1,0 +1,59 @@
+name: Real CPU Quota and Throttling Economics
+
+on:
+  push:
+    branches: [research/resource-cpu-quota-throttling]
+    paths: [.github/workflows/real-quota-economics.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpu-quota-throttling-research
+  cancel-in-progress: true
+
+jobs:
+  real-quota:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Environment and privilege checks
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+          sudo -n true
+          test -e /sys/fs/cgroup/cgroup.controllers
+          systemctl --version | head -2
+      - name: Build quota queue and correctness tests
+        shell: bash
+        run: |
+          cargo fmt --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+          cargo check --manifest-path experiments/cpu-quota-throttling/Cargo.toml --all-targets
+          cargo clippy --manifest-path experiments/cpu-quota-throttling/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+          cargo build --release --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+      - name: Real service quota changes and paired CPU / p95 workload
+        shell: bash
+        run: |
+          python3 experiments/cpu-quota-throttling/run_quota.py \
+            --binary experiments/cpu-quota-throttling/target/release/alpencat-cpu-quota-lab \
+            --output real-quota-results.json | tee real-quota-summary.log
+      - name: Persist complete evidence even for economic NO-GO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quota-throttling-${{ matrix.os }}
+          path: |
+            real-quota-results.json
+            real-quota-results.csv
+            real-quota-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
