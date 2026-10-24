@@ -1,6 +1,9 @@
 name: CPU Quota Control Probe
 
 on:
+  push:
+    branches: [research/resource-cpu-quota-throttling]
+    paths: [.github/workflows/cpu-quota-probe.yml]
   workflow_dispatch:
 
 permissions:
