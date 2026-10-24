@@ -1,0 +1,10 @@
+[package]
+name = "alpencat-cpu-quota-lab"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+alpencat-resource = { path = "../../crates/alpencat-resource" }
