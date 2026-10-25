@@ -224,9 +224,10 @@ fn main() {
         let wall_ns = start.elapsed().as_nanos();
         let process_cpu_ns = cpu_ns().saturating_sub(cpu_start);
         let average_workers = worker_history.iter().sum::<usize>() as f64 / WINDOWS as f64;
+        let last_workers = if mode.is_search() { selected } else { fixed };
         writeln!(stream,
             "PHASE phase={} mode={} size={} quota_milli={} workers={} avg_workers={:.3} requests={} checksum={} wall_ns={} cpu_ns={} p95_ns={} observe_ns={} switches={} rollbacks={} probes={}",
-            phase, a[1], a[2], expected_milli, selected, average_workers,
+            phase, a[1], a[2], expected_milli, last_workers, average_workers,
             WINDOWS*request_windows, checksum, wall_ns, process_cpu_ns,
             p95_ns, observe_ns, switches, rollbacks,
             if mode.is_search() { PROBE_ORDER.len() } else { 0 }
