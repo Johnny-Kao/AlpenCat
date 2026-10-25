@@ -38,6 +38,7 @@ jobs:
           cargo fmt --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo check --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo clippy --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml -- -D warnings
+          cargo test -p alpencat-resource
           cargo test --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo build --release --manifest-path experiments/cpu-quota-throttling/Cargo.toml --bin bounded_policy
       - name: Real cgroup 2 to 0.5 to 2 CPU plus bounded selection
