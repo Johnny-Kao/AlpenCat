@@ -35,6 +35,7 @@ jobs:
       - name: Build and correctness
         shell: bash
         run: |
+          python3 -m py_compile experiments/cpu-quota-throttling/run_bounded.py
           cargo fmt --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo check --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml
           cargo clippy --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml -- -D warnings
