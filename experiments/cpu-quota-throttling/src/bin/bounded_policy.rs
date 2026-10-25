@@ -187,7 +187,7 @@ fn main() {
         let mut reference_p95: u64 = 0;
         for w in 0..WINDOWS {
             let workers = if mode.is_search() {
-                if w < PROBE_ORDER.len() { PROBE_ORDER[w] } else { selected }
+                if w < PROBE_ORDER.len() { PROBE_ORDER.get(w).copied().expect("probe index within bounds") } else { selected }
             } else { fixed };
             worker_history.push(workers);
             let (result, wall_ns, cpu_ns, mut completions) =
