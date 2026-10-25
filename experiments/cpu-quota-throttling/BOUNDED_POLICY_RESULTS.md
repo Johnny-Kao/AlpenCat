@@ -41,6 +41,21 @@ Each phase has 12 windows of real requests. Bounded search uses eight explorator
 
 The **short scenario** also failed the preset distinct-gain gate in both environments. Its per-run and median results are in the CI artifacts, not excluded from the verdict.
 
+## Secondary observation: consistent latency/CPU vs fixed 8-worker setting (post hoc)
+
+A separate review of the archived per-round CSV shows an important **tradeoff**, which was *not the preregistered distinct-AlpenCat success gate*.
+
+The earlier **simple quota policy** (not bounded search), compared with fixed 8 Workers on the same workload and runner, improved **both** summed phase p95 and process CPU time in **5/5 paired rounds for every one of the four workload/runner combinations**: 20/20 positive for each metric. Median paired improvements:
+
+| Runner / workload | p95 improvement | CPU-time improvement | Wall-time change |
+|---|---:|---:|---:|
+| Ubuntu 22.04 short | +10.26% | +3.07% | **10.91% slower** |
+| Ubuntu 22.04 long | +19.40% | +2.21% | **2.56% slower** |
+| Ubuntu 24.04 short | +23.76% | +4.04% | **16.00% slower** |
+| Ubuntu 24.04 long | +23.37% | +3.03% | **2.97% slower** |
+
+**Critical qualifiers:** This is a post hoc *multi-objective tradeoff* observed in a synthetic saturated queue, not a preregistered universal acceleration pass. All 20/20 Wall Time comparisons against fixed 8 were **regressions**. A user prioritizing p95/CPU over total throughput might consider this acceptable, but the library does not know that objective by itself. The identical simple quota policy via direct OS API obtains approximately the same results, so this finding supports workload-specific policy tuning, **not unique acceleration by AlpenCat Core**. Validate on an independent workload and preset objective before external performance claims.
+
 ## Interpretation
 
 1. The bounded candidate selection **cannot be recommended** as a default. The exploration overhead and instability overwhelm its theoretical ability to choose a better number of workers in these workloads.
