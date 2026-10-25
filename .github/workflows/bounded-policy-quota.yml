@@ -1,0 +1,59 @@
+name: Bounded Adaptive Policy Real Quota Experiment
+
+on:
+  push:
+    branches: [research/resource-bounded-policy]
+    paths:
+      - .github/workflows/bounded-policy-quota.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bounded-policy-quota
+  cancel-in-progress: true
+
+jobs:
+  cgroup-bounded-policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Environment
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+          sudo -n true
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Build and correctness
+        shell: bash
+        run: |
+          cargo fmt --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+          cargo check --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+          cargo clippy --all-targets --manifest-path experiments/cpu-quota-throttling/Cargo.toml -- -D warnings
+          cargo test --manifest-path experiments/cpu-quota-throttling/Cargo.toml
+          cargo build --release --manifest-path experiments/cpu-quota-throttling/Cargo.toml --bin bounded_policy
+      - name: Real cgroup 2 to 0.5 to 2 CPU plus bounded selection
+        shell: bash
+        run: |
+          python3 experiments/cpu-quota-throttling/run_bounded.py \
+            --binary experiments/cpu-quota-throttling/target/release/bounded_policy \
+            --output bounded-policy-results.json | tee bounded-policy-summary.log
+      - name: Preserve all paired rounds even for NO-GO
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bounded-policy-${{ matrix.os }}
+          path: |
+            bounded-policy-results.json
+            bounded-policy-results.csv
+            bounded-policy-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
