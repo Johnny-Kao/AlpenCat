@@ -1,0 +1,11 @@
+[package]
+name = "alpencat-http-slo-pilot"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+alpencat-resource = { path = "../../crates/alpencat-resource" }
+tiny_http = "0.12"
