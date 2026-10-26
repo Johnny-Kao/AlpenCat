@@ -1,0 +1,57 @@
+name: Real HTTP Restricted-Quota Holdout
+
+on:
+  push:
+    branches: [research/http-slo-real-cgroup]
+    paths:
+      - .github/workflows/http-restricted-holdout.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpencat-http-restricted-holdout
+  cancel-in-progress: true
+
+jobs:
+  holdout:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real Linux control prerequisites
+        shell: bash
+        run: |
+          rustc --version
+          python3 --version
+          test -e /sys/fs/cgroup/cgroup.controllers
+          sudo -n true
+      - name: Build and check reference HTTP app
+        shell: bash
+        run: |
+          python3 -m py_compile experiments/http-slo-pilot/run_http_slo.py experiments/http-slo-pilot/run_restricted_holdout.py
+          cargo check --manifest-path experiments/http-slo-pilot/Cargo.toml
+          cargo test --manifest-path experiments/http-slo-pilot/Cargo.toml
+          cargo build --release --manifest-path experiments/http-slo-pilot/Cargo.toml
+      - name: Holdout mixed requests under real CPU quota
+        shell: bash
+        run: |
+          python3 experiments/http-slo-pilot/run_restricted_holdout.py \
+            --binary experiments/http-slo-pilot/target/release/alpencat-http-slo-pilot \
+            --output restricted-holdout.json | tee restricted-holdout-summary.log
+      - name: Keep raw results and negatives
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: http-holdout-${{ matrix.os }}
+          path: |
+            restricted-holdout.json
+            restricted-holdout.csv
+            restricted-holdout-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
