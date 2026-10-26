@@ -111,7 +111,7 @@ fn main() {
                 match srv.recv_timeout(Duration::from_millis(10)) {
                     Ok(Some(req)) => {
                         let body=response_for(req.url());
-                        let (body,status)=match body{
+                        let (body,status): (String, u16)=match body{
                             Some(b)=>(b,200),None=>("invalid request".to_string(),400)
                         };
                         let _=req.respond(Response::from_string(body).with_status_code(status));
