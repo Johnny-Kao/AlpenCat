@@ -1,0 +1,60 @@
+name: Independent HTTP SLO Real Cgroup Pilot
+
+on:
+  push:
+    branches: [research/http-slo-real-cgroup]
+    paths:
+      - .github/workflows/http-slo-cgroup.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpencat-http-slo-pilot
+  cancel-in-progress: true
+
+jobs:
+  http-slo:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Environment and permissions
+        shell: bash
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+          sudo -n true
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Build HTTP server and validate
+        shell: bash
+        run: |
+          python3 -m py_compile experiments/http-slo-pilot/run_http_slo.py
+          cargo fmt --manifest-path experiments/http-slo-pilot/Cargo.toml
+          cargo check --manifest-path experiments/http-slo-pilot/Cargo.toml --all-targets
+          cargo clippy --manifest-path experiments/http-slo-pilot/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path experiments/http-slo-pilot/Cargo.toml
+          cargo build --release --manifest-path experiments/http-slo-pilot/Cargo.toml
+      - name: Real HTTP client and CPU quota 2-to-0.5-to-2
+        shell: bash
+        run: |
+          python3 experiments/http-slo-pilot/run_http_slo.py \
+            --binary experiments/http-slo-pilot/target/release/alpencat-http-slo-pilot \
+            --output http-slo-results.json | tee http-slo-summary.log
+      - name: Keep all observations including negative economics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: http-slo-${{ matrix.os }}
+          path: |
+            http-slo-results.json
+            http-slo-results.csv
+            http-slo-summary.log
+          if-no-files-found: ignore
+          retention-days: 14
