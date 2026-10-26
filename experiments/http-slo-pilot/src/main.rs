@@ -69,7 +69,7 @@ fn response_for(path: &str) -> Option<String> {
     if fields.next()? != "work" { return None; }
     let id: u64 = fields.next()?.parse().ok()?;
     let rounds: usize = fields.next()?.parse().ok()?;
-    if fields.next().is_some() || !(1..=2_000_000).contains(&rounds) { return None; }
+    if fields.next().is_some() || !(1..=3_000_000).contains(&rounds) { return None; }
     Some(format!("{:016x}",compute(id,rounds)))
 }
 fn main() {
