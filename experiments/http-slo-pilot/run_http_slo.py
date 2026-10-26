@@ -21,8 +21,8 @@ MODES = ("fixed1", "fixed2", "fixed4", "fixed8",
          "direct_quota", "alpencat_quota", "direct_guard", "alpencat_guard")
 QUOTAS = (2000, 500, 2000)
 SIZES = {
-    "short": {"requests": 72, "iterations": 700_000, "slo_ms": 250},
-    "long": {"requests": 144, "iterations": 1_200_000, "slo_ms": 700},
+    "short": {"requests": 96, "iterations": 1_800_000, "slo_ms": 250},
+    "long": {"requests": 144, "iterations": 2_000_000, "slo_ms": 700},
 }
 ROUNDS = 4
 PARALLEL_CLIENTS = 16
