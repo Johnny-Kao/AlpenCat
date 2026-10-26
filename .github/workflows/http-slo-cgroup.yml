@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 18
+    timeout-minutes: 17
     steps:
       - uses: actions/checkout@v4
       - name: Environment and permissions
