@@ -1,0 +1,37 @@
+name: Format Resource SDK Beta Candidate Source
+
+on:
+  push:
+    branches: [release-candidate/resource-intelligence-beta]
+    paths:
+      - .github/workflows/resource-beta-format.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  format-candidate:
+    if: github.ref == 'refs/heads/release-candidate/resource-intelligence-beta'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release-candidate/resource-intelligence-beta
+          persist-credentials: true
+      - name: Scope formatting to standalone resource crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --package alpencat-resource
+          git status --short
+          if ! git diff --quiet -- crates/alpencat-resource; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add crates/alpencat-resource/src crates/alpencat-resource/examples
+            git commit -m "style(resource): commit rustfmt normalization for Beta candidate"
+            git push origin HEAD:release-candidate/resource-intelligence-beta
+          fi
+          cargo fmt --package alpencat-resource -- --check
+          echo "CANDIDATE_SOURCE_SHA=$(git rev-parse HEAD)"
