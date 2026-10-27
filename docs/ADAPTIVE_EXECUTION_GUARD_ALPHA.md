@@ -29,23 +29,22 @@ let config = GuardConfig {
     upward_cooldown: Duration::from_secs(5),
     ..GuardConfig::default()
 };
-let guard = Guard::new(config)?;
+let guard = Guard::new(config).expect("valid application guard config");
 let resources = ResourceState::new();
-resources.refresh()?; // explicit blocking OS read, not on every request
+resources.refresh().expect("consistent resource observation"); // explicit blocking OS read
 let decision = guard.evaluate(&resources);
 let gate = guard.gate();
 if let Some(permit) = gate.acquire_timeout(Duration::from_millis(100)) {
     // application runs its own real task, then permit drops
     drop(permit);
 }
-# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-**Note:** the snippet is illustrative. `RefreshError` and `ConfigError` do not implement std::error::Error in this alpha; integrators can map failures explicitly. Real operational code must define queueing/backpressure, cancellation, and what stale readings mean for their service.
+**Note:** the snippet is illustrative. Real operational code must handle refresh/configuration errors, queueing, cancellation, and what stale readings mean for its service.
 
 ## Original evidence, without overstating it
 
-The previous independent HTTP reference study under actual 2→0.5→2 Cgroup v2 quota showed conditional p95 reductions in 3/4 preregistered workload/runner cases against fixed8, with one fail. A strong static fixed2 also performed competitively under restriction, and a direct-OS same-policy adapter matched AlpenCat. This motivates an **application-specified guard**, not a universal speedup claim. See [restricted HTTP results](../experiments/http-slo-pilot/RESTRICTED_HOLDOUT_RESULTS.md) on the separate research branch.
+The previous independent HTTP reference study under actual 2→0.5→2 Cgroup v2 quota showed conditional p95 reductions in 3/4 preregistered workload/runner cases against fixed8, with one fail. A strong static fixed2 also performed competitively under restriction, and a direct-OS same-policy adapter matched AlpenCat. This motivates an **application-specified guard**, not a universal speedup claim. See the [separate restricted HTTP research results](https://github.com/Johnny-Kao/AlpenCat/blob/research/http-slo-real-cgroup/experiments/http-slo-pilot/RESTRICTED_HOLDOUT_RESULTS.md).
 
 ## Product alpha acceptance (must report separately from CI)
 
