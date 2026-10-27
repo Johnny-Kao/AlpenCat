@@ -412,11 +412,9 @@ mod tests {
     }
     #[test]
     fn invalid_config_is_rejected() {
-        let mut c = GuardConfig::default();
-        c.normal_limit = 0;
+        let c = GuardConfig { normal_limit: 0, ..GuardConfig::default() };
         assert!(matches!(Guard::new(c), Err(ConfigError::ZeroLimit)));
-        let mut c = GuardConfig::default();
-        c.constrained_below_cpus = f64::NAN;
+        let c = GuardConfig { constrained_below_cpus: f64::NAN, ..GuardConfig::default() };
         assert!(matches!(Guard::new(c), Err(ConfigError::InvalidThreshold)));
     }
     #[test]
