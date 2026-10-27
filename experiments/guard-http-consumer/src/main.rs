@@ -46,9 +46,12 @@ fn mode_from(s: &str) -> Option<Mode> {
 }
 fn main() {
     let args: Vec<_> = env::args().collect();
-    assert_eq!(args.len(), 3, "guard-http-consumer <observe|recommend|enforce|fixed8> <port>");
+    assert_eq!(args.len(), 3, "guard-http-consumer <observe|recommend|enforce|direct|fixed8> <port>");
     let fixed8 = args[1] == "fixed8";
-    let mode = if fixed8 {
+    let direct = args[1] == "direct";
+    let mode = if direct {
+        Mode::Enforce
+    } else if fixed8 {
         Mode::Observe
     } else {
         mode_from(&args[1]).expect("invalid mode")
@@ -86,12 +89,19 @@ fn main() {
                 if path == "/event" {
                     // External caller explicitly declares a resource-change event.
                     // No implicit per-request OS reads.
-                    source.invalidate();
-                    let result = source.refresh();
-                    let decision = guard.evaluate(&source);
+                    let (refresh_ok, decision) = if direct {
+                        (true, guard.evaluate_observation(
+                            alpencat_resource::Freshness::Fresh,
+                            Some(&alpencat_resource::snapshot()),
+                        ))
+                    } else {
+                        source.invalidate();
+                        let refresh = source.refresh();
+                        (refresh.is_ok(), guard.evaluate(&source))
+                    };
                     let response = format!(
                         "refresh_ok={} mode={mode:?} known_cpu={:?} active_limit={} recommendation={:?} freshness={:?} reason={:?}",
-                        result.is_ok(), decision.known_cpu_equivalents,
+                        refresh_ok, decision.known_cpu_equivalents,
                         if fixed8 { 8 } else { decision.active_limit },
                         decision.recommended_limit, decision.freshness, decision.reason
                     );
