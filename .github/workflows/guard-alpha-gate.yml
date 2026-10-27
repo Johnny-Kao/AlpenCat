@@ -1,0 +1,94 @@
+name: Adaptive Execution Guard Alpha — Functional and HTTP Pilot
+
+on:
+  push:
+    branches: [feature/adaptive-execution-guard-alpha]
+    paths:
+      - .github/workflows/guard-alpha-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpencat-guard-alpha
+  cancel-in-progress: true
+
+jobs:
+  portable-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact source
+        shell: bash
+        run: |
+          echo "TESTED_GUARD_SHA=$(git rev-parse HEAD)"
+          rustc --version
+          cargo --version
+      - name: Committed source formatting
+        shell: bash
+        run: |
+          cargo fmt --package alpencat-guard -- --check
+          cargo fmt --manifest-path experiments/guard-http-consumer/Cargo.toml -- --check
+      - name: Compile, lint and test Guard API
+        shell: bash
+        run: |
+          cargo check -p alpencat-guard --all-targets
+          cargo clippy -p alpencat-guard --all-targets -- -D warnings
+          cargo test -p alpencat-guard -- --nocapture
+          cargo test -p alpencat-resource
+      - name: Independently compile and test real HTTP adopter
+        shell: bash
+        run: |
+          cargo check --manifest-path experiments/guard-http-consumer/Cargo.toml --all-targets
+          cargo clippy --manifest-path experiments/guard-http-consumer/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path experiments/guard-http-consumer/Cargo.toml
+          cargo build --release --manifest-path experiments/guard-http-consumer/Cargo.toml
+      - name: Contract integrity summary
+        shell: bash
+        run: echo "GUARD_FUNCTIONAL_API_GATE=PASS"
+
+  real-cgroup-http:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    needs: portable-contract
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm disposable service capabilities and Python syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TESTED_GUARD_SHA=$(git rev-parse HEAD)"
+          sudo -n true
+          test -e /sys/fs/cgroup/cgroup.controllers
+          python3 -m py_compile experiments/guard-http-consumer/run_real_cgroup.py
+      - name: Build real external HTTP adopter
+        shell: bash
+        run: cargo build --release --manifest-path experiments/guard-http-consumer/Cargo.toml
+      - name: Real 2 to half to 2 CPU Quota with real HTTP arrivals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 experiments/guard-http-consumer/run_real_cgroup.py \
+            --binary experiments/guard-http-consumer/target/release/guard-http-consumer \
+            --output guard-http-pilot.json | tee guard-http-pilot-summary.log
+      - name: Preserve all raw results independent of economic outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-http-pilot-${{ matrix.os }}
+          path: |
+            guard-http-pilot.json
+            guard-http-pilot.csv
+            guard-http-pilot-summary.log
+          if-no-files-found: ignore
+          retention-days: 30
