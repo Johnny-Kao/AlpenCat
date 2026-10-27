@@ -1,0 +1,12 @@
+[package]
+name = "guard-http-consumer"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+alpencat-guard = { path = "../../crates/alpencat-guard" }
+alpencat-resource = { path = "../../crates/alpencat-resource" }
+tiny_http = "0.12"
