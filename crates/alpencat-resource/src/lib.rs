@@ -126,7 +126,7 @@ pub fn resolve_cgroup_mount(mountinfo: &str, member: &str) -> Option<(PathBuf, b
     if !member.starts_with('/') || member.split('/').any(|x| x == ".." || x == ".") { return None; }
     let mut winner: Option<(usize, PathBuf, bool)> = None;
     for line in mountinfo.lines() {
-        let (left,right) = line.split_once(" - ")?;
+        let Some((left,right)) = line.split_once(" - ") else { continue; };
         if right.split_whitespace().next() != Some("cgroup2") { continue; }
         let columns: Vec<_> = left.split_whitespace().collect();
         if columns.len() < 5 { continue; }
@@ -158,12 +158,14 @@ fn walk_visible(cg: &Path, root: &Path) -> Vec<PathBuf> {
     }
     found
 }
-fn aggregate_memory(ancestors: &[PathBuf]) -> Reading<Limit> {
+fn aggregate_memory(ancestors: &[PathBuf], visible_root: bool) -> Reading<Limit> {
     let mut smallest = u64::MAX;
-    for p in ancestors {
+    for (i,p) in ancestors.iter().enumerate() {
         match parsed(get_text(&p.join("memory.max")),parse_limit) {
             Reading::Known(Limit::Value(n)) => smallest = smallest.min(n),
             Reading::Known(Limit::Unlimited) => {},
+            // The cgroup v2 hierarchy root has no memory.max control file.
+            Reading::Unsupported if visible_root && i + 1 == ancestors.len() => {},
             Reading::Unsupported => return Reading::Unsupported,
             Reading::Unknown => return Reading::Unknown,
             Reading::Unavailable(e) => return Reading::Unavailable(e),
@@ -171,9 +173,9 @@ fn aggregate_memory(ancestors: &[PathBuf]) -> Reading<Limit> {
     }
     Reading::Known(if smallest == u64::MAX { Limit::Unlimited } else { Limit::Value(smallest) })
 }
-fn aggregate_cpu(ancestors: &[PathBuf]) -> (Reading<Limit>,Reading<u64>,Reading<f64>) {
+fn aggregate_cpu(ancestors: &[PathBuf], visible_root: bool) -> (Reading<Limit>,Reading<u64>,Reading<f64>) {
     let mut best: Option<(u64,u64)> = None;
-    for p in ancestors {
+    for (i,p) in ancestors.iter().enumerate() {
         match parsed(get_text(&p.join("cpu.max")),parse_cpu_max) {
             Reading::Known((Limit::Value(q),period)) => {
                 if best.is_none_or(|(a,b)| (q as u128)*(b as u128) < (a as u128)*(period as u128)) {
@@ -181,6 +183,8 @@ fn aggregate_cpu(ancestors: &[PathBuf]) -> (Reading<Limit>,Reading<u64>,Reading<
                 }
             },
             Reading::Known((Limit::Unlimited,_)) => {},
+            // The top-level cgroup2 root does not expose cpu.max.
+            Reading::Unsupported if visible_root && i + 1 == ancestors.len() => {},
             Reading::Unsupported => return (Reading::Unsupported,Reading::Unsupported,Reading::Unsupported),
             Reading::Unknown => return (Reading::Unknown,Reading::Unknown,Reading::Unknown),
             Reading::Unavailable(e) => return (Reading::Unavailable(e.clone()),Reading::Unavailable(e.clone()),Reading::Unavailable(e)),
@@ -235,8 +239,8 @@ fn linux_snapshot(proc_self: &Path, fallback_mount: &Path) -> ResourceSnapshot {
     let (cpu_quota_us,cpu_period_us,effective_cpu_capacity,memory_max_bytes) =
         if ancestors.is_empty() { (Reading::Unknown,Reading::Unknown,Reading::Unknown,Reading::Unknown) }
         else {
-            let (q,p,c)=aggregate_cpu(&ancestors);
-            (q,p,c,aggregate_memory(&ancestors))
+            let (q,p,c)=aggregate_cpu(&ancestors,complete);
+            (q,p,c,aggregate_memory(&ancestors,complete))
         };
     let read_cg = |name: &str| match cg.as_ref() {
         Some((p,_)) => get_text(&p.join(name)), None => Reading::Unknown
@@ -313,8 +317,28 @@ mod tests {
         let mi = "32 1 0:20 /tenant /sys/fs/cgroup rw - cgroup2 cgroup rw\n";
         assert_eq!(resolve_cgroup_mount(mi, "/tenant/app").map(|x| x.0), Some(PathBuf::from("/sys/fs/cgroup/app")));
         assert_eq!(resolve_cgroup_mount(mi, "/different"), None);
+        assert_eq!(resolve_cgroup_mount(&format!("malformed mountinfo line\\n{mi}"), "/tenant/app").map(|x| x.0), Some(PathBuf::from("/sys/fs/cgroup/app")));
         assert_eq!(resolve_cgroup_mount(mi, "/tenant/../escape"), None);
-        assert_eq!(aggregate_cpu(&[]).2, Reading::Unknown); 
+        assert_eq!(aggregate_cpu(&[],true).2, Reading::Unknown); 
+    }
+    #[cfg(target_os="linux")]
+    #[test] fn root_without_cpu_or_memory_max_is_valid() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ROOT_TEST: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!("alpencat-root-{}-{}",std::process::id(),NEXT_ROOT_TEST.fetch_add(1,Ordering::Relaxed)));
+        let leaf = dir.join("system.slice").join("test.service");
+        std::fs::create_dir_all(&leaf).unwrap();
+        std::fs::write(leaf.join("cpu.max"),"50000 100000\n").unwrap();
+        std::fs::write(leaf.join("memory.max"),"1048576\n").unwrap();
+        std::fs::write(dir.join("system.slice/cpu.max"),"max 100000\n").unwrap();
+        std::fs::write(dir.join("system.slice/memory.max"),"max\n").unwrap();
+        // The actual cgroup v2 hierarchy root normally has no cpu.max / memory.max.
+        let hierarchy = walk_visible(&leaf,&dir);
+        assert_eq!(aggregate_cpu(&hierarchy,true).2,Reading::Known(0.5));
+        assert_eq!(aggregate_memory(&hierarchy,true),Reading::Known(Limit::Value(1048576)));
+        assert_eq!(aggregate_cpu(&hierarchy,false).2,Reading::Unsupported);
+        assert_eq!(aggregate_memory(&hierarchy,false),Reading::Unsupported);
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test] fn membership() {
         assert_eq!(parse_v2_membership("0::/foo/bar\n"),Some("/foo/bar"));
