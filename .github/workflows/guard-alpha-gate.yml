@@ -5,6 +5,9 @@ on:
     branches: [feature/adaptive-execution-guard-alpha]
     paths:
       - .github/workflows/guard-alpha-gate.yml
+      - crates/alpencat-guard/**
+      - experiments/guard-http-consumer/**
+      - Cargo.toml
   workflow_dispatch:
 
 permissions:
