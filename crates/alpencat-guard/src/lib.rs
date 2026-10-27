@@ -235,6 +235,7 @@ pub struct Outcome {
 pub enum FeedbackResult {
     NotEnforcing,
     NoPendingSwitch,
+    InsufficientEvidence,
     Accepted,
     RolledBack,
 }
@@ -365,9 +366,17 @@ impl Guard {
             return FeedbackResult::NotEnforcing;
         }
         let mut controller = lock(&self.inner);
-        let Some(previous) = controller.rollback_target.take() else {
+        if controller.rollback_target.is_none() {
             return FeedbackResult::NoPendingSwitch;
-        };
+        }
+        // Missing baseline samples cannot silently approve an unverified switch.
+        if [
+            baseline.p95, baseline.cpu_time, baseline.wall_time,
+            candidate.p95, candidate.cpu_time, candidate.wall_time,
+        ].iter().any(|duration| duration.is_zero()) {
+            return FeedbackResult::InsufficientEvidence;
+        }
+        let previous = controller.rollback_target.take().expect("checked above");
         let violation = regresses(
             baseline.p95,
             candidate.p95,
@@ -496,6 +505,11 @@ mod tests {
             p95: Duration::from_millis(120),
             ..reference
         };
+        let missing = Outcome { p95: Duration::ZERO, ..reference };
+        assert_eq!(
+            guard.report_comparison(missing, worse),
+            FeedbackResult::InsufficientEvidence
+        );
         assert_eq!(
             guard.report_comparison(reference, worse),
             FeedbackResult::RolledBack
