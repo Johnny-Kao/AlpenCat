@@ -1,0 +1,71 @@
+name: Resource Intelligence SDK Beta Candidate Gate
+
+on:
+  push:
+    branches: [release-candidate/resource-intelligence-beta]
+    paths:
+      - .github/workflows/resource-beta-candidate-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resource-intelligence-beta-candidate
+  cancel-in-progress: true
+
+jobs:
+  resource-sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show exact tested source identity
+        shell: bash
+        run: |
+          echo "TESTED_SHA=$(git rev-parse HEAD)"
+          rustc --version
+          cargo --version
+      - name: Strict formatting of committed Resource SDK source
+        shell: bash
+        run: cargo fmt --package alpencat-resource -- --check
+      - name: Compile and Clippy resource API
+        shell: bash
+        run: |
+          cargo check -p alpencat-resource --all-targets
+          cargo clippy -p alpencat-resource --all-targets -- -D warnings
+      - name: Test resource core and old runtime compatibility
+        shell: bash
+        run: |
+          cargo test -p alpencat-resource -- --nocapture
+          cargo test -p runtime-api --lib
+      - name: External standalone Consumer and public quickstart
+        shell: bash
+        run: |
+          cargo run -p alpencat-resource --example quickstart
+          cargo run --manifest-path experiments/resource-lifecycle-consumer/Cargo.toml --release
+      - name: Build Linux actual cgroup integration smoke
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo build --release -p alpencat-resource --example beta_live_cgroup
+          sudo -n true
+          test -f /sys/fs/cgroup/cgroup.controllers
+      - name: Validate actual half-CPU service resource read and stale/fresh lifecycle
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNIT="alpencat-beta-live-${GITHUB_RUN_ID}"
+          sudo -n systemd-run --wait --pipe --collect \
+            --unit "${UNIT}" --uid "$(id -un)" \
+            --property=CPUQuota=50% \
+            "$PWD/target/release/examples/beta_live_cgroup"
+      - name: Human-readable summary
+        shell: bash
+        run: |
+          echo "RESOURCE_SDK_BETA_CANDIDATE_FUNCTIONAL_GATE=PASS"
