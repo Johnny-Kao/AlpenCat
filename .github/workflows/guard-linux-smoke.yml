@@ -1,0 +1,49 @@
+name: Guard Live Linux Admission Smoke
+
+on:
+  push:
+    branches: [feature/adaptive-execution-guard-alpha]
+    paths:
+      - .github/workflows/guard-linux-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-resource-admission:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare exact standalone Guard adopter
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TESTED_GUARD_SHA=$(git rev-parse HEAD)"
+          python3 -m py_compile experiments/guard-http-consumer/run_real_cgroup.py
+          cargo build --release --manifest-path experiments/guard-http-consumer/Cargo.toml
+          sudo -n true
+          test -e /sys/fs/cgroup/cgroup.controllers
+      - name: Real quota changes, passive-mode proof, and HTTP request results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 experiments/guard-http-consumer/run_real_cgroup.py \
+            --binary experiments/guard-http-consumer/target/release/guard-http-consumer \
+            --output guard-linux-smoke.json | tee guard-linux-smoke-summary.log
+      - name: Retain raw evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guard-live-${{ matrix.os }}
+          path: |
+            guard-linux-smoke.json
+            guard-linux-smoke.csv
+            guard-linux-smoke-summary.log
+          if-no-files-found: ignore
+          retention-days: 30
