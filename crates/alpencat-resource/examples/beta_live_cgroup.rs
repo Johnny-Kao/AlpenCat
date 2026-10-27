@@ -3,9 +3,9 @@
 #[cfg(target_os = "linux")]
 fn main() {
     use alpencat_resource::{snapshot, Freshness, Reading, ResourceState};
-    let capacity = |value: &alpencat_resource::ResourceSnapshot| match value.effective_cpu_capacity
+    let capacity = |value: &alpencat_resource::ResourceSnapshot| match &value.effective_cpu_capacity
     {
-        Reading::Known(capacity) => capacity,
+        Reading::Known(capacity) => *capacity,
         ref other => panic!("resource quota unavailable despite real cpu.max: {other:?}"),
     };
     let direct = snapshot();
