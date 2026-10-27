@@ -156,7 +156,7 @@ fn main() {
     }
     let memory = Arc::new(initial);
     writeln!(sock, "READY pid={}", std::process::id()).unwrap();
-    for phase in 0..3 {
+    for phase in 0..4 {
         let mut command = String::new();
         assert!(reader.read_line(&mut command).unwrap() > 0, "control unexpectedly closed");
         let requested = command.trim().strip_prefix("GO ").expect("GO command");
