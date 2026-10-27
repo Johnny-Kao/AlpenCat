@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/runtime-api",
     "crates/alpencat-resource",
+    "crates/alpencat-guard",
     "crates/runtime-core",
     "crates/runtime-selector",
     "crates/runtime-cpu-rayon",
