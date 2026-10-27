@@ -1,0 +1,59 @@
+name: Resource SDK External Git Install Gate
+
+on:
+  push:
+    branches: [release-candidate/resource-intelligence-beta]
+    paths:
+      - .github/workflows/resource-beta-git-install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-git-consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build independent Cargo project with immutable SHA Git dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "EXACT_TESTED_SHA=${GITHUB_SHA}"
+          TARGET="${RUNNER_TEMP}/alpencat-sdk-real-external-user"
+          mkdir -p "${TARGET}/src"
+          cat > "${TARGET}/Cargo.toml" <<EOF
+          [package]
+          name = "alpencat-resource-git-integrator"
+          version = "0.0.1"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          alpencat-resource = { git = "https://github.com/Johnny-Kao/AlpenCat", rev = "${GITHUB_SHA}" }
+          EOF
+          cat > "${TARGET}/src/main.rs" <<'RUST'
+          use alpencat_resource::{ResourceState, Freshness, Reading};
+          fn main() {
+              let state = ResourceState::new();
+              assert_eq!(state.cached().freshness, Freshness::Empty);
+              let first = state.refresh().expect("consistent OS observation");
+              assert_eq!(first.freshness, Freshness::Fresh);
+              if let Some(value) = first.fresh() {
+                  match &value.effective_cpu_capacity {
+                      Reading::Known(n) => assert!(*n >= 0.0),
+                      Reading::Unsupported | Reading::Unknown | Reading::Unavailable(_) => {},
+                  }
+              }
+              state.invalidate();
+              assert_eq!(state.cached().freshness, Freshness::Stale);
+              assert!(state.cached().fresh().is_none());
+              let new = state.refresh().expect("consistent refreshed observation");
+              assert_eq!(new.freshness, Freshness::Fresh);
+              assert!(new.generation >= 2);
+              println!("EXTERNAL_GIT_INSTALL_AND_LIFECYCLE_PASS generation={}", new.generation);
+          }
+          RUST
+          cargo run --release --manifest-path "${TARGET}/Cargo.toml"
+          cargo metadata --manifest-path "${TARGET}/Cargo.toml" --no-deps --format-version=1 > "${RUNNER_TEMP}/resource-beta-external-metadata.json"
