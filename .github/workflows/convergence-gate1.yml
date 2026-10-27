@@ -1,0 +1,63 @@
+name: Convergence Gate 1 — Real Serial CPU Regret
+
+on:
+  push:
+    branches: [research/convergence-gate1-execution-crossover]
+    paths:
+      - .github/workflows/convergence-gate1.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpencat-convergence-gate1
+  cancel-in-progress: true
+
+jobs:
+  scientific-gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real Linux resource controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          python3 --version
+          sudo -n true
+          test -f /sys/fs/cgroup/cgroup.controllers
+          cat /proc/self/cgroup
+      - name: Compile exact existing Runtime execution paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile experiments/convergence-gate1/run_crossover.py
+          cargo fmt --all
+          cargo check -p runtime-api --example convergence_gate1_matrix
+          cargo clippy -p runtime-api --example convergence_gate1_matrix -- -D warnings
+          cargo test -p runtime-api --example convergence_gate1_matrix
+          cargo build -p runtime-api --example convergence_gate1_matrix --release
+      - name: Real CPU quota and experimental economic GO / NO-GO
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 experiments/convergence-gate1/run_crossover.py \
+            --binary target/release/examples/convergence_gate1_matrix \
+            --output convergence-gate1-results.json | tee convergence-gate1-summary.log
+      - name: Preserve raw measurements regardless of economic outcome
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-gate1-${{ matrix.os }}
+          path: |
+            convergence-gate1-results.json
+            convergence-gate1-results.csv
+            convergence-gate1-summary.log
+          if-no-files-found: ignore
+          retention-days: 30
