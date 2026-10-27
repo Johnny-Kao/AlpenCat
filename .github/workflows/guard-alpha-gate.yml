@@ -1,4 +1,5 @@
 name: Adaptive Execution Guard Alpha — Functional and HTTP Pilot
+# Final committed API contract: passive modes cannot acquire an enforced gate.
 
 on:
   push:
