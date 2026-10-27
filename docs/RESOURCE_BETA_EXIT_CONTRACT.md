@@ -1,6 +1,6 @@
 # AlpenCat Resource Intelligence SDK — Beta Candidate Exit Contract
 
-**Current status: CANDIDATE, NOT RELEASED.** The original general Adaptive Compute CPU-economics research passed experiment integrity but **did not** pass the original 1% economic GO threshold in its bounded [Convergence Gate 1](https://github.com/Johnny-Kao/AlpenCat/tree/research/convergence-gate1-execution-crossover). That scientific NO-GO does **not** imply this separate resource-observation product lacks value; it does prohibit claiming generic workload speedups.
+**Current status: FUNCTIONAL CANDIDATE VERIFIED; NOT RELEASED.** The original general Adaptive Compute CPU-economics research passed experiment integrity but **did not** pass the original 1% economic GO threshold in its bounded [Convergence Gate 1](https://github.com/Johnny-Kao/AlpenCat/tree/research/convergence-gate1-execution-crossover). That scientific NO-GO does **not** imply this separate resource-observation product lacks value; it does prohibit claiming generic workload speedups.
 
 ## What we will actually ship
 
@@ -19,14 +19,16 @@ Existing `runtime-api` and earlier v0.4/v0.5 GitHub source tags remain unchanged
 | Requirement | Exit evidence | Current |
 |---|---|---|
 | API contract | Public quickstart + invalidation, age, Unknown/Unavailable semantics | Documented in `docs/RESOURCE_LIFECYCLE_EXPERIMENT.md` and resource alpha quickstart; revise for beta |
-| Cgroup correctness | Actual cgroup2 leaf quota read and visible mount-root absent `cpu.max`/memory.max fixture, graceful malformed mountinfo | Implemented in this candidate; CI required |
-| Data lifecycle | No hidden OS reads in `cached()`, stale must never be Fresh, concurrent refresh publication and invalidation safe | Unit tests implemented; CI required |
-| Real Linux integration | 0.5 CPU quota via **actual disposable systemd service** with ResourceState lifecycle checked | `examples/beta_live_cgroup.rs` added; CI required |
-| Cross-platform | Resource library tests on Ubuntu 22.04 / 24.04 / macOS 15 / Windows 2025 | CI required |
-| Real consumer | Independent Cargo package with no internal workspace dependency on runtime-api exercises published API | Existing `experiments/resource-lifecycle-consumer`, CI required |
-| Formatting & packaging | Rustfmt check on committed source, public install/upgrade path, stable source API inventory, no accidental crates.io publish | **BLOCKED UNTIL STRICT CHECK** |
-| Independent use | One integrator can install the immutable version/tag and exercise it without repository-specific paths | Not verified for beta tag; GitHub tag must not be created without signoff |
-| Release identity | Tag points to the exact final tested commit SHA; docs and release notes match | Not done |
+| Cgroup correctness | Actual cgroup2 leaf quota read and visible mount-root absent `cpu.max`/memory.max fixture, graceful malformed mountinfo | Implemented in this candidate; [4-OS CI PASS](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40526685176) |
+| Data lifecycle | No hidden OS reads in `cached()`, stale must never be Fresh, concurrent refresh publication and invalidation safe | Unit tests verified by [4-OS CI](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40526685176) |
+| Real Linux integration | 0.5 CPU quota via **actual disposable systemd service** with ResourceState lifecycle checked | Real 0.5 CPU Cgroup PASS in [both Ubuntu jobs](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40526685176) |
+| Cross-platform | Resource library tests on Ubuntu 22.04 / 24.04 / macOS 15 / Windows 2025 | **4/4 PASS**, [run #40526685176](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40526685176) |
+| Real consumer | Independent Cargo package with no internal workspace dependency on runtime-api exercises published API | Separate Cargo consumer PASS on all four systems, [run #40526685176](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40526685176) |
+| Formatting & packaging | Rustfmt check on committed source, public install/upgrade path, stable source API inventory, no accidental crates.io publish | Strict committed-source rustfmt + Clippy PASS; workspace crate `0.1.0`, `publish=false` (Git source only); final Beta version policy pending |
+| Independent use | One integrator can install the immutable version/tag and exercise it without repository-specific paths | Independent out-of-workspace **SHA-pinned Git consumer PASS**, [run #40527236202](https://github.com/Johnny-Kao/AlpenCat/actions/runs/40527236202), checked SHA `3fc0e1043776b74b56221da40b7f00f08c03de7e`; final immutable Beta tag not created |
+| Release identity | Tag points to the exact final tested commit SHA; docs and release notes match | Not done — release signoff decision required |
+
+**Evidence snapshot:** Source format, live Linux Cgroup, library correctness, runtime compatibility, 4 OS and real external Git dependency all PASS. This is **engineering candidate GO, not released Beta**; formal version/tag and external adopter feedback still pending.
 
 **Only these exit conditions decide SDK Beta release.** No general 1% compute saving is required for a read-only Resource Intelligence SDK. Conversely, even all-green CI does not make it a released product without the last two evidence gates.
 
