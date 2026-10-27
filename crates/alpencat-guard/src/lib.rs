@@ -218,7 +218,8 @@ pub struct Decision {
     pub known_cpu_equivalents: Option<f64>,
     /// None for Observe; otherwise the opt-in proposed admission ceiling.
     pub recommended_limit: Option<usize>,
-    pub active_limit: usize,
+    /// Only Enforce has an active limit. Passive modes never own admissions.
+    pub active_limit: Option<usize>,
     pub changed: bool,
     pub reason: Reason,
     pub rollbacks: u64,
@@ -266,8 +267,9 @@ impl Guard {
             }),
         })
     }
-    pub fn gate(&self) -> AdmissionGate {
-        self.gate.clone()
+    /// Passive modes cannot expose a throttling gate; applications retain their own.
+    pub fn gate(&self) -> Option<AdmissionGate> {
+        (self.config.mode == Mode::Enforce).then(|| self.gate.clone())
     }
     /// Reads *only* the caller-owned cache and age; never refreshes the OS.
     pub fn evaluate(&self, source: &ResourceState) -> Decision {
@@ -348,7 +350,7 @@ impl Guard {
             freshness,
             known_cpu_equivalents: capacity,
             recommended_limit: (self.config.mode != Mode::Observe).then_some(proposed),
-            active_limit: self.gate.limit(),
+            active_limit: (self.config.mode == Mode::Enforce).then(|| self.gate.limit()),
             changed,
             reason,
             rollbacks: controller.rollback_count,
@@ -430,7 +432,8 @@ mod tests {
         let p = passive.evaluate_observation(Freshness::Fresh, Some(&normal));
         assert_eq!(p.recommended_limit, None);
         assert_eq!(p.known_cpu_equivalents, Some(2.0));
-        assert_eq!(p.active_limit, 2);
+        assert_eq!(p.active_limit, None);
+        assert!(passive.gate().is_none());
         let recommender = Guard::new(GuardConfig {
             mode: Mode::Recommend,
             ..GuardConfig::default()
@@ -438,23 +441,24 @@ mod tests {
         .unwrap();
         let d = recommender.evaluate_observation(Freshness::Fresh, Some(&normal));
         assert_eq!(d.recommended_limit, Some(4));
-        assert_eq!(d.active_limit, 2);
+        assert_eq!(d.active_limit, None);
+        assert!(recommender.gate().is_none());
         assert!(!d.changed);
     }
     #[test]
     fn enforce_changes_profiles_and_expired_data_fails_safe() {
         let guard = enforce();
         let high = guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
-        assert_eq!(high.active_limit, 4);
+        assert_eq!(high.active_limit, Some(4));
         assert!(high.changed);
         let low = guard.evaluate_observation(Freshness::Fresh, Some(&observed(0.5)));
-        assert_eq!(low.active_limit, 2);
+        assert_eq!(low.active_limit, Some(2));
         assert_eq!(low.reason, Reason::TrustedConstrained);
         let invalid = guard.evaluate_observation(Freshness::Expired, Some(&observed(2.0)));
-        assert_eq!(invalid.active_limit, 2);
+        assert_eq!(invalid.active_limit, Some(2));
         assert_eq!(invalid.reason, Reason::UntrustedFallback);
         let cooldown = guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
-        assert_eq!(cooldown.active_limit, 2);
+        assert_eq!(cooldown.active_limit, Some(2));
         assert_eq!(cooldown.reason, Reason::UpwardCooldown);
     }
     #[test]
@@ -496,19 +500,19 @@ mod tests {
             guard.report_comparison(reference, worse),
             FeedbackResult::RolledBack
         );
-        assert_eq!(guard.gate().limit(), 4);
+        assert_eq!(guard.gate().unwrap().limit(), 4);
         let decision = guard.evaluate_observation(Freshness::Fresh, Some(&observed(0.5)));
         assert_eq!(decision.reason, Reason::FeedbackSuppressed);
-        assert_eq!(decision.active_limit, 4);
+        assert_eq!(decision.active_limit, Some(4));
         assert_eq!(decision.rollbacks, 1);
         assert_eq!(
             guard.report_comparison(reference, worse),
             FeedbackResult::NoPendingSwitch
         );
         let changed = guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
-        assert_eq!(changed.active_limit, 4);
+        assert_eq!(changed.active_limit, Some(4));
         let restored = guard.evaluate_observation(Freshness::Fresh, Some(&observed(0.5)));
-        assert_eq!(restored.active_limit, 2);
+        assert_eq!(restored.active_limit, Some(2));
     }
     #[test]
     fn successful_feedback_clears_pending_switch() {
