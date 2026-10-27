@@ -115,12 +115,16 @@ def run_service(binary,mode,trial,user):
             if status!=200 or "refresh_ok=true" not in body:
                 raise AssertionError(f"resource event failed: {status} {body}")
             expected = {
-                "fixed8":8, "observe":2, "recommend":2,
+                "fixed8":8, "observe":8, "recommend":8,
                 "direct":2 if milli<1000 else 4,
                 "enforce":2 if milli<1000 else 4,
             }[mode]
             if f"active_limit={expected}" not in body:
                 raise AssertionError(f"{mode} did not choose expected profile in quota {milli}: {body}")
+            if mode == "observe" and "recommendation=None" not in body:
+                raise AssertionError(f"observe must not propose a worker limit: {body}")
+            if mode == "recommend" and f"recommendation=Some({2 if milli<1000 else 4})" not in body:
+                raise AssertionError(f"recommend must propose (without enforcing) the profile: {body}")
             if mode in ("direct","enforce") and f"known_cpu=Some({milli/1000})" not in body:
                 raise AssertionError(f"resource quota was not correctly observed: {body}")
             before=cstat(path)
