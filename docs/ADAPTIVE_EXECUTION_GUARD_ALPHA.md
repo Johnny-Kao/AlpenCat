@@ -6,12 +6,12 @@
 
 Import `alpencat-guard` (dependency: only `alpencat-resource`, no third-party/runtime dependency), create a `Guard` with an **application-owned** profile, and use its cloneable `AdmissionGate` to bound **concurrent request or task admission**, not total Linux workers or Rayon global threads.
 
-- **Observe (safe default)**: interpret fresh capacity evidence but never recommend or mutate admissions.
-- **Recommend**: return a proposed profile and reason; the app implements/accepts its own strategy.
-- **Enforce (explicit opt-in)**: update admissions to a configured normal/constrained limit after a caller-owned event. Existing work is not revoked; new permits respect the smaller limit.
+- **Observe (safe default)**: interpret fresh capacity evidence; no admission gate is exposed and no limit is applied.
+- **Recommend**: return a proposed profile and reason without exposing an enforced admission gate; the app retains its own request control.
+- **Enforce (explicit opt-in)**: this is the only mode that exposes an `AdmissionGate`. It updates admissions to an application-configured normal/constrained limit after a caller-owned event. Existing work is not revoked; new permits respect the smaller limit.
 - **Unknown/Expired/Stale/membership-race/partial ancestor visibility**: use application-configured fail-safe admission ceiling; never infer quota from a partial snapshot. `Guard.evaluate(&ResourceState)` is **cache only**, performs no hidden OS observation.
 - **Cooldown**: prevents oscillatory **upward** changes; downscaling and fail-safe adjustments are immediate. It does not create background events.
-- **Feedback + rollback**: the caller may submit `report_comparison(baseline, candidate)`, with p95, CPU Time and Wall Time **measured within the same resource regime**. If any configured regression threshold is exceeded, Guard restores the previous limit **once**, then suppresses reapplying the losing profile until a different resource regime is observed. No fake measurements or automatic per-request sampling.
+- **Feedback + rollback**: the caller may submit `report_comparison(baseline, candidate)`, with p95, CPU Time and Wall Time **measured within the same resource regime**. Missing/zero measurement evidence does not approve a strategy. If any configured regression threshold is exceeded, Guard restores the previous limit **once**, then suppresses reapplying the losing profile until a different resource regime is observed. No fake measurements or automatic per-request sampling.
 - **AdmissionGate**: RAII `Permit`, nonblocking `try_acquire`, bounded `acquire_timeout`. A permit is released even during panic unwinding; a limit reduction never interrupts in-flight tasks or frees the permit prematurely. The application owns the actual worker pool and overload behavior.
 
 ### Minimal API sketch
@@ -33,7 +33,7 @@ let guard = Guard::new(config).expect("valid application guard config");
 let resources = ResourceState::new();
 resources.refresh().expect("consistent resource observation"); // explicit blocking OS read
 let decision = guard.evaluate(&resources);
-let gate = guard.gate();
+let gate = guard.gate().expect("Enforce mode admits work");
 if let Some(permit) = gate.acquire_timeout(Duration::from_millis(100)) {
     // application runs its own real task, then permit drops
     drop(permit);
