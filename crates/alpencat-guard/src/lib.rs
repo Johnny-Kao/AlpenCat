@@ -471,7 +471,7 @@ mod tests {
             guard
                 .evaluate_observation(Freshness::Fresh, Some(&missing))
                 .active_limit,
-            2
+            Some(2)
         );
         missing.limits_complete = true;
         missing.effective_cpu_capacity = Reading::Unknown;
@@ -479,7 +479,7 @@ mod tests {
             guard
                 .evaluate_observation(Freshness::Fresh, Some(&missing))
                 .active_limit,
-            2
+            Some(2)
         );
     }
     #[test]
