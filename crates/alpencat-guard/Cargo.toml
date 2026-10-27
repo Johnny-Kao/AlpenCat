@@ -1,0 +1,12 @@
+[package]
+name = "alpencat-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Opt-in resource-aware admission and SLO guard for Rust services"
+
+[dependencies]
+alpencat-resource = { path = "../alpencat-resource" }
