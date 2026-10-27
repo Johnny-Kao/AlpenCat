@@ -65,19 +65,19 @@ impl Default for GuardConfig {
 }
 impl GuardConfig {
     fn validate(&self) -> Result<(), ConfigError> {
-        if [self.normal_limit, self.constrained_limit, self.fail_safe_limit]
-            .contains(&0)
+        if [
+            self.normal_limit,
+            self.constrained_limit,
+            self.fail_safe_limit,
+        ]
+        .contains(&0)
         {
             return Err(ConfigError::ZeroLimit);
         }
-        if self.constrained_limit > self.normal_limit
-            || self.fail_safe_limit > self.normal_limit
-        {
+        if self.constrained_limit > self.normal_limit || self.fail_safe_limit > self.normal_limit {
             return Err(ConfigError::InconsistentLimits);
         }
-        if !self.constrained_below_cpus.is_finite()
-            || self.constrained_below_cpus <= 0.0
-        {
+        if !self.constrained_below_cpus.is_finite() || self.constrained_below_cpus <= 0.0 {
             return Err(ConfigError::InvalidThreshold);
         }
         if [
@@ -95,7 +95,9 @@ impl GuardConfig {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[derive(Debug)]
@@ -121,7 +123,10 @@ impl AdmissionGate {
         }
         Ok(Self {
             shared: Arc::new(GateInner {
-                state: Mutex::new(GateState { limit, in_flight: 0 }),
+                state: Mutex::new(GateState {
+                    limit,
+                    in_flight: 0,
+                }),
                 capacity_changed: Condvar::new(),
             }),
         })
@@ -144,7 +149,9 @@ impl AdmissionGate {
             return None;
         }
         state.in_flight += 1;
-        Some(Permit { shared: Arc::clone(&self.shared) })
+        Some(Permit {
+            shared: Arc::clone(&self.shared),
+        })
     }
     /// Wait at most timeout. No implicit queue; the application owns requests
     /// and decides whether a timeout should be retried or rejected.
@@ -154,7 +161,9 @@ impl AdmissionGate {
         loop {
             if state.in_flight < state.limit {
                 state.in_flight += 1;
-                return Some(Permit { shared: Arc::clone(&self.shared) });
+                return Some(Permit {
+                    shared: Arc::clone(&self.shared),
+                });
             }
             let remaining = timeout.checked_sub(start.elapsed())?;
             let result = self.shared.capacity_changed.wait_timeout(state, remaining);
@@ -180,7 +189,10 @@ impl Drop for Permit {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Regime { Normal, Constrained }
+enum Regime {
+    Normal,
+    Constrained,
+}
 #[derive(Debug)]
 struct Controller {
     regime: Option<Regime>,
@@ -226,8 +238,8 @@ pub enum FeedbackResult {
     RolledBack,
 }
 fn regresses(baseline: Duration, actual: Duration, allowed_pct: f64) -> bool {
-    !baseline.is_zero() &&
-        actual.as_secs_f64() > baseline.as_secs_f64() * (1.0 + allowed_pct / 100.0)
+    !baseline.is_zero()
+        && actual.as_secs_f64() > baseline.as_secs_f64() * (1.0 + allowed_pct / 100.0)
 }
 
 /// Guard decision and admission control are synchronized; resource collection
@@ -312,15 +324,21 @@ impl Guard {
             if controller.blocked_in_regime && regime.is_some() {
                 target = current;
                 reason = Reason::FeedbackSuppressed;
-            } else if target > current && controller.last_change.is_some_and(|time|
-                time.elapsed() < self.config.upward_cooldown
-            ) {
+            } else if target > current
+                && controller
+                    .last_change
+                    .is_some_and(|time| time.elapsed() < self.config.upward_cooldown)
+            {
                 target = current;
                 reason = Reason::UpwardCooldown;
             }
             if target != current {
                 self.gate.set_limit(target);
-                controller.rollback_target = if regime.is_some() { Some(current) } else { None };
+                controller.rollback_target = if regime.is_some() {
+                    Some(current)
+                } else {
+                    None
+                };
                 controller.last_change = Some(Instant::now());
                 changed = true;
             }
@@ -348,10 +366,19 @@ impl Guard {
         let Some(previous) = controller.rollback_target.take() else {
             return FeedbackResult::NoPendingSwitch;
         };
-        let violation =
-            regresses(baseline.p95, candidate.p95, self.config.max_p95_regression_pct)
-            || regresses(baseline.cpu_time, candidate.cpu_time, self.config.max_cpu_regression_pct)
-            || regresses(baseline.wall_time, candidate.wall_time, self.config.max_wall_regression_pct);
+        let violation = regresses(
+            baseline.p95,
+            candidate.p95,
+            self.config.max_p95_regression_pct,
+        ) || regresses(
+            baseline.cpu_time,
+            candidate.cpu_time,
+            self.config.max_cpu_regression_pct,
+        ) || regresses(
+            baseline.wall_time,
+            candidate.wall_time,
+            self.config.max_wall_regression_pct,
+        );
         if violation {
             self.gate.set_limit(previous);
             controller.blocked_in_regime = true;
@@ -380,7 +407,8 @@ mod tests {
             mode: Mode::Enforce,
             upward_cooldown: Duration::from_secs(3600),
             ..GuardConfig::default()
-        }).unwrap()
+        })
+        .unwrap()
     }
     #[test]
     fn invalid_config_is_rejected() {
@@ -400,8 +428,10 @@ mod tests {
         assert_eq!(p.known_cpu_equivalents, Some(2.0));
         assert_eq!(p.active_limit, 2);
         let recommender = Guard::new(GuardConfig {
-            mode: Mode::Recommend, ..GuardConfig::default()
-        }).unwrap();
+            mode: Mode::Recommend,
+            ..GuardConfig::default()
+        })
+        .unwrap();
         let d = recommender.evaluate_observation(Freshness::Fresh, Some(&normal));
         assert_eq!(d.recommended_limit, Some(4));
         assert_eq!(d.active_limit, 2);
@@ -429,10 +459,20 @@ mod tests {
         guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
         let mut missing = observed(2.0);
         missing.limits_complete = false;
-        assert_eq!(guard.evaluate_observation(Freshness::Fresh, Some(&missing)).active_limit, 2);
+        assert_eq!(
+            guard
+                .evaluate_observation(Freshness::Fresh, Some(&missing))
+                .active_limit,
+            2
+        );
         missing.limits_complete = true;
         missing.effective_cpu_capacity = Reading::Unknown;
-        assert_eq!(guard.evaluate_observation(Freshness::Fresh, Some(&missing)).active_limit, 2);
+        assert_eq!(
+            guard
+                .evaluate_observation(Freshness::Fresh, Some(&missing))
+                .active_limit,
+            2
+        );
     }
     #[test]
     fn feedback_rolls_back_and_suppresses_until_regime_changes() {
@@ -444,14 +484,23 @@ mod tests {
             cpu_time: Duration::from_secs(1),
             wall_time: Duration::from_secs(2),
         };
-        let worse = Outcome { p95: Duration::from_millis(120), ..reference };
-        assert_eq!(guard.report_comparison(reference, worse), FeedbackResult::RolledBack);
+        let worse = Outcome {
+            p95: Duration::from_millis(120),
+            ..reference
+        };
+        assert_eq!(
+            guard.report_comparison(reference, worse),
+            FeedbackResult::RolledBack
+        );
         assert_eq!(guard.gate().limit(), 4);
         let decision = guard.evaluate_observation(Freshness::Fresh, Some(&observed(0.5)));
         assert_eq!(decision.reason, Reason::FeedbackSuppressed);
         assert_eq!(decision.active_limit, 4);
         assert_eq!(decision.rollbacks, 1);
-        assert_eq!(guard.report_comparison(reference, worse), FeedbackResult::NoPendingSwitch);
+        assert_eq!(
+            guard.report_comparison(reference, worse),
+            FeedbackResult::NoPendingSwitch
+        );
         let changed = guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
         assert_eq!(changed.active_limit, 4);
         let restored = guard.evaluate_observation(Freshness::Fresh, Some(&observed(0.5)));
@@ -461,9 +510,19 @@ mod tests {
     fn successful_feedback_clears_pending_switch() {
         let guard = enforce();
         guard.evaluate_observation(Freshness::Fresh, Some(&observed(2.0)));
-        let metric=Outcome {p95:Duration::from_millis(100),cpu_time:Duration::from_millis(500),wall_time:Duration::from_millis(600)};
-        assert_eq!(guard.report_comparison(metric, metric),FeedbackResult::Accepted);
-        assert_eq!(guard.report_comparison(metric, metric),FeedbackResult::NoPendingSwitch);
+        let metric = Outcome {
+            p95: Duration::from_millis(100),
+            cpu_time: Duration::from_millis(500),
+            wall_time: Duration::from_millis(600),
+        };
+        assert_eq!(
+            guard.report_comparison(metric, metric),
+            FeedbackResult::Accepted
+        );
+        assert_eq!(
+            guard.report_comparison(metric, metric),
+            FeedbackResult::NoPendingSwitch
+        );
     }
     #[test]
     fn gate_enforces_limit_and_does_not_revoke_running_permits() {
@@ -472,31 +531,31 @@ mod tests {
         let p2 = gate.try_acquire().unwrap();
         assert!(gate.try_acquire().is_none());
         gate.set_limit(1);
-        assert_eq!(gate.in_flight(),2);
+        assert_eq!(gate.in_flight(), 2);
         drop(p1);
         assert!(gate.try_acquire().is_none());
         drop(p2);
         let p3 = gate.try_acquire().unwrap();
-        assert_eq!(gate.in_flight(),1);
+        assert_eq!(gate.in_flight(), 1);
         drop(p3);
-        assert_eq!(gate.in_flight(),0);
+        assert_eq!(gate.in_flight(), 0);
     }
     #[test]
     fn blocked_waiters_observe_release_and_timeout() {
-        let gate=AdmissionGate::new(1).unwrap();
-        let p=gate.try_acquire().unwrap();
+        let gate = AdmissionGate::new(1).unwrap();
+        let p = gate.try_acquire().unwrap();
         assert!(gate.acquire_timeout(Duration::from_millis(5)).is_none());
-        let copy=gate.clone();
-        let success=Arc::new(AtomicUsize::new(0));
-        let updated=Arc::clone(&success);
-        let handle=std::thread::spawn(move||{
-            let permit=copy.acquire_timeout(Duration::from_secs(2)).unwrap();
-            updated.fetch_add(1,Ordering::SeqCst);
+        let copy = gate.clone();
+        let success = Arc::new(AtomicUsize::new(0));
+        let updated = Arc::clone(&success);
+        let handle = std::thread::spawn(move || {
+            let permit = copy.acquire_timeout(Duration::from_secs(2)).unwrap();
+            updated.fetch_add(1, Ordering::SeqCst);
             drop(permit);
         });
         drop(p);
         handle.join().unwrap();
-        assert_eq!(success.load(Ordering::SeqCst),1);
-        assert_eq!(gate.in_flight(),0);
+        assert_eq!(success.load(Ordering::SeqCst), 1);
+        assert_eq!(gate.in_flight(), 0);
     }
 }

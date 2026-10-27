@@ -18,7 +18,8 @@ use tiny_http::{Response, Server};
 fn compute(id: u64, rounds: usize) -> u64 {
     let mut x = id.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0xd1b5_4a32_d192_ed03;
     for n in 0..rounds {
-        x ^= (n as u64).wrapping_add(id << 19)
+        x ^= (n as u64)
+            .wrapping_add(id << 19)
             .wrapping_mul(0xbf58_476d_1ce4_e5b9);
         x = x.rotate_left(17).wrapping_mul(0x94d0_49bb_1331_11eb);
     }
@@ -46,7 +47,11 @@ fn mode_from(s: &str) -> Option<Mode> {
 }
 fn main() {
     let args: Vec<_> = env::args().collect();
-    assert_eq!(args.len(), 3, "guard-http-consumer <observe|recommend|enforce|direct|fixed8> <port>");
+    assert_eq!(
+        args.len(),
+        3,
+        "guard-http-consumer <observe|recommend|enforce|direct|fixed8> <port>"
+    );
     let fixed8 = args[1] == "fixed8";
     let direct = args[1] == "direct";
     let mode = if direct {
@@ -56,20 +61,22 @@ fn main() {
     } else {
         mode_from(&args[1]).expect("invalid mode")
     };
-    let guard = Arc::new(Guard::new(GuardConfig {
-        mode,
-        upward_cooldown: Duration::ZERO, // phase changes are orchestrated and explicit
-        max_observation_age: Duration::from_secs(30),
-        ..GuardConfig::default()
-    }).unwrap());
+    let guard = Arc::new(
+        Guard::new(GuardConfig {
+            mode,
+            upward_cooldown: Duration::ZERO, // phase changes are orchestrated and explicit
+            max_observation_age: Duration::from_secs(30),
+            ..GuardConfig::default()
+        })
+        .unwrap(),
+    );
     let source = Arc::new(ResourceState::new());
     let gate = if fixed8 {
         AdmissionGate::new(8).unwrap()
     } else {
         guard.gate()
     };
-    let server = Arc::new(Server::http(format!("127.0.0.1:{}", args[2]))
-        .expect("HTTP listen"));
+    let server = Arc::new(Server::http(format!("127.0.0.1:{}", args[2])).expect("HTTP listen"));
     let running = Arc::new(AtomicBool::new(true));
     let mut threads = Vec::new();
     for _ in 0..8 {
