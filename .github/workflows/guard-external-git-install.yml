@@ -1,0 +1,63 @@
+name: Guard Independent Git Consumer Gate
+
+on:
+  push:
+    branches: [feature/adaptive-execution-guard-alpha]
+    paths:
+      - .github/workflows/guard-external-git-install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-cargo-adopter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: SHA-pinned out-of-repo Consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "EXACT_GUARD_TESTED_SHA=${GITHUB_SHA}"
+          TEMP_PROJECT="${RUNNER_TEMP}/guard-standalone-adopter"
+          mkdir -p "${TEMP_PROJECT}/src"
+          cat > "${TEMP_PROJECT}/Cargo.toml" <<EOF
+          [package]
+          name = "guard-external-adopter"
+          version = "0.0.1"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          alpencat-guard = { git = "https://github.com/Johnny-Kao/AlpenCat", rev = "${GITHUB_SHA}" }
+          alpencat-resource = { git = "https://github.com/Johnny-Kao/AlpenCat", rev = "${GITHUB_SHA}" }
+          EOF
+          cat > "${TEMP_PROJECT}/src/main.rs" <<'RUST'
+          use alpencat_guard::{Guard, GuardConfig, Mode, AdmissionGate, FeedbackResult, Outcome};
+          use alpencat_resource::{ResourceState, Freshness};
+          use std::time::Duration;
+          fn main() {
+              let passive = Guard::new(GuardConfig::default()).unwrap();
+              assert!(passive.gate().is_none(), "Observe must be passive");
+              let recommender = Guard::new(GuardConfig {mode:Mode::Recommend,..GuardConfig::default()}).unwrap();
+              assert!(recommender.gate().is_none(), "Recommend must be passive");
+              let guard = Guard::new(GuardConfig {mode:Mode::Enforce, upward_cooldown:Duration::ZERO, ..GuardConfig::default()}).unwrap();
+              let source=ResourceState::new();
+              source.refresh().unwrap();
+              let first=guard.evaluate(&source);
+              assert_eq!(first.freshness, Freshness::Fresh);
+              let gate: AdmissionGate=guard.gate().unwrap();
+              assert!(gate.limit() > 0);
+              let ticket=gate.try_acquire().expect("can admit real work");
+              assert_eq!(gate.in_flight(),1);
+              drop(ticket);
+              assert_eq!(gate.in_flight(),0);
+              let observation=Outcome {p95:Duration::from_millis(100), cpu_time:Duration::from_millis(100),wall_time:Duration::from_millis(100)};
+              let result=guard.report_comparison(observation,observation);
+              assert!(matches!(result,FeedbackResult::Accepted|FeedbackResult::NoPendingSwitch));
+              println!("GUARD_EXTERNAL_GIT_INSTALL_PASS limit={}",gate.limit());
+          }
+          RUST
+          cargo run --release --manifest-path "${TEMP_PROJECT}/Cargo.toml"
