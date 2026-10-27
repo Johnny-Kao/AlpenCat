@@ -71,10 +71,11 @@ fn main() {
         .unwrap(),
     );
     let source = Arc::new(ResourceState::new());
-    let gate = if fixed8 {
-        AdmissionGate::new(8).unwrap()
+    let gate = if mode == Mode::Enforce {
+        guard.gate().expect("Enforce must supply admission gate")
     } else {
-        guard.gate()
+        // Observe and Recommend NEVER throttle requests; app owns its baseline.
+        AdmissionGate::new(8).unwrap()
     };
     let server = Arc::new(Server::http(format!("127.0.0.1:{}", args[2])).expect("HTTP listen"));
     let running = Arc::new(AtomicBool::new(true));
@@ -109,7 +110,7 @@ fn main() {
                     let response = format!(
                         "refresh_ok={} mode={mode:?} known_cpu={:?} active_limit={} recommendation={:?} freshness={:?} reason={:?}",
                         refresh_ok, decision.known_cpu_equivalents,
-                        if fixed8 { 8 } else { decision.active_limit },
+                        gate.limit(),
                         decision.recommended_limit, decision.freshness, decision.reason
                     );
                     request.respond(Response::from_string(response)).ok();
