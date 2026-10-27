@@ -371,9 +371,16 @@ impl Guard {
         }
         // Missing baseline samples cannot silently approve an unverified switch.
         if [
-            baseline.p95, baseline.cpu_time, baseline.wall_time,
-            candidate.p95, candidate.cpu_time, candidate.wall_time,
-        ].iter().any(|duration| duration.is_zero()) {
+            baseline.p95,
+            baseline.cpu_time,
+            baseline.wall_time,
+            candidate.p95,
+            candidate.cpu_time,
+            candidate.wall_time,
+        ]
+        .iter()
+        .any(|duration| duration.is_zero())
+        {
             return FeedbackResult::InsufficientEvidence;
         }
         let previous = controller.rollback_target.take().expect("checked above");
@@ -505,7 +512,10 @@ mod tests {
             p95: Duration::from_millis(120),
             ..reference
         };
-        let missing = Outcome { p95: Duration::ZERO, ..reference };
+        let missing = Outcome {
+            p95: Duration::ZERO,
+            ..reference
+        };
         assert_eq!(
             guard.report_comparison(missing, worse),
             FeedbackResult::InsufficientEvidence
