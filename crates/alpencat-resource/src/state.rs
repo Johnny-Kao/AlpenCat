@@ -85,7 +85,9 @@ impl ResourceState {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         // All critical sections only update simple fields and clone Arc, so
         // the internal invariant survives user panics outside the lock.
-        self.inner.lock().unwrap_or_else(|poison| poison.into_inner())
+        self.inner
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
     }
 
     pub fn cached(&self) -> CachedSnapshot {
@@ -141,9 +143,7 @@ impl ResourceState {
         }
 
         let mut inner = self.lock();
-        if inner.epoch != epoch
-            || inner.observed_at.is_some_and(|last| last > started)
-        {
+        if inner.epoch != epoch || inner.observed_at.is_some_and(|last| last > started) {
             return Err(RefreshError::Superseded);
         }
 
@@ -192,17 +192,22 @@ mod tests {
         let second = state.refresh_with(fixture).unwrap();
         assert_eq!(second.generation, 2);
         assert_eq!(state.cached().freshness, Freshness::Fresh);
-        assert_eq!(state.cached_with_max_age(Duration::ZERO).freshness, Freshness::Expired);
+        assert_eq!(
+            state.cached_with_max_age(Duration::ZERO).freshness,
+            Freshness::Expired
+        );
     }
 
     #[test]
     fn cached_and_invalidate_never_invoke_observer() {
         let state = ResourceState::new();
         let count = AtomicUsize::new(0);
-        state.refresh_with(|| {
-            count.fetch_add(1, Ordering::Relaxed);
-            fixture()
-        }).unwrap();
+        state
+            .refresh_with(|| {
+                count.fetch_add(1, Ordering::Relaxed);
+                fixture()
+            })
+            .unwrap();
         for _ in 0..10_000 {
             assert!(state.cached().snapshot.is_some());
         }
@@ -216,11 +221,16 @@ mod tests {
         let state = ResourceState::new();
         state.refresh_with(fixture).unwrap();
         let prior = state.cached().generation;
-        assert_eq!(state.refresh_with(|| {
-            let mut v = fixture();
-            v.membership_changed_during_read = true;
-            v
-        }).unwrap_err(), RefreshError::Inconsistent);
+        assert_eq!(
+            state
+                .refresh_with(|| {
+                    let mut v = fixture();
+                    v.membership_changed_during_read = true;
+                    v
+                })
+                .unwrap_err(),
+            RefreshError::Inconsistent
+        );
         assert_eq!(state.cached().generation, prior);
         assert_eq!(state.cached().freshness, Freshness::Stale);
     }
@@ -246,7 +256,10 @@ mod tests {
         entered.wait();
         state.invalidate();
         released.wait();
-        assert_eq!(handle.join().unwrap().unwrap_err(), RefreshError::Superseded);
+        assert_eq!(
+            handle.join().unwrap().unwrap_err(),
+            RefreshError::Superseded
+        );
         assert_eq!(state.cached().freshness, Freshness::Stale);
         assert_eq!(state.cached().generation, 1);
     }
@@ -261,11 +274,13 @@ mod tests {
         let s = Arc::clone(&state);
         let e = Arc::clone(&entered);
         let r = Arc::clone(&released);
-        let slow = thread::spawn(move || s.refresh_with(|| {
-            e.wait();
-            r.wait();
-            fixture()
-        }));
+        let slow = thread::spawn(move || {
+            s.refresh_with(|| {
+                e.wait();
+                r.wait();
+                fixture()
+            })
+        });
         entered.wait();
         state.refresh_with(fixture).unwrap();
         released.wait();
