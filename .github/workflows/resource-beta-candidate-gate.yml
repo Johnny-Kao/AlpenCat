@@ -1,4 +1,5 @@
 name: Resource Intelligence SDK Beta Candidate Gate
+# Candidate source must satisfy strict formatting and true Linux Cgroup regression.
 
 on:
   push:
