@@ -480,7 +480,7 @@ mod tests {
         );
         assert_eq!(resolve_cgroup_mount(mi, "/different"), None);
         assert_eq!(
-            resolve_cgroup_mount(&format!("malformed mountinfo line\\n{mi}"), "/tenant/app")
+            resolve_cgroup_mount(&format!("malformed mountinfo line\n{mi}"), "/tenant/app")
                 .map(|x| x.0),
             Some(PathBuf::from("/sys/fs/cgroup/app"))
         );
