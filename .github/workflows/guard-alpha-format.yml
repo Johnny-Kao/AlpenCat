@@ -1,4 +1,5 @@
 name: Format Guard Candidate Source
+# Repeat after strict-passive-mode API and SLO evidence contract fixes.
 
 on:
   push:
