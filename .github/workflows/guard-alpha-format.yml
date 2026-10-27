@@ -1,0 +1,38 @@
+name: Format Guard Candidate Source
+
+on:
+  push:
+    branches: [feature/adaptive-execution-guard-alpha]
+    paths:
+      - .github/workflows/guard-alpha-format.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/adaptive-execution-guard-alpha
+          persist-credentials: true
+      - name: Format committed guard crate and standalone external app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --package alpencat-guard
+          cargo fmt --manifest-path experiments/guard-http-consumer/Cargo.toml
+          git diff --check
+          if ! git diff --quiet -- crates/alpencat-guard/src experiments/guard-http-consumer/src; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add crates/alpencat-guard/src experiments/guard-http-consumer/src
+            git commit -m "style(guard): commit formatted product source and integration"
+            git push origin HEAD:feature/adaptive-execution-guard-alpha
+          fi
+          cargo fmt --package alpencat-guard -- --check
+          cargo fmt --manifest-path experiments/guard-http-consumer/Cargo.toml -- --check
+          echo "GUARD_FORMATTED_SOURCE_SHA=$(git rev-parse HEAD)"
